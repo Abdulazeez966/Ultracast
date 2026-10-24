@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "server": "node server.js",
+    "package": "node make-exe.js",
     "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js"
   },
   "dependencies": {

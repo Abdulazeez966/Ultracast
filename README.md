@@ -5,6 +5,7 @@ Cast and control between an Android phone and a Windows laptop over the phone's 
 ## Run
     npm install
     npm start          # the Electron laptop app
+    npm run package    # builds dist/UltraCast/ (UltraCast.exe on Windows), a folder to zip and double-click
     npm test           # server, quality, input and file tests (no browser needed)
 
 Join the laptop to your phone's hotspot, press "New code", open the address on the phone, then "Share my screen".
