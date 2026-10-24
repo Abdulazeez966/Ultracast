@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ws://127.0.0.1:*; img-src 'self' data:; media-src 'self' blob:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UltraCast</title>
+<style>
+  :root { color-scheme: dark; --bg:#0B0F1A; --s1:#141B2D; --s2:#1B2440; --bd:#26314F; --tx:#E8ECF4; --sb:#8F9BB3; --ac:#22D3EE; --on:#031318; --bad:#F87171; --warn:#FBBF24;
+    --glow: 0 0 0 1px rgba(34,211,238,.6), 0 0 22px rgba(34,211,238,.35), 0 0 64px rgba(34,211,238,.14); --glow-s: 0 0 10px rgba(34,211,238,.7); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--tx); font: 15px/1.5 'Segoe UI', system-ui, sans-serif; }
+  body { padding: 24px 28px 40px; }
+  .wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 600; }
+  .mark { width: 34px; height: 34px; border-radius: 10px; background: var(--ac); box-shadow: var(--glow-s); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sb); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--bd); background: var(--s1); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ac); box-shadow: var(--glow-s); }
+  .checks .dot:not(.on) { background: #4A5578; }
+  .card { background: var(--s1); border: 1px solid var(--bd); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .card h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .muted { color: var(--sb); font-size: 14px; margin: 0; }
+  .url { display: flex; gap: 10px; align-items: center; background: var(--bg); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 12px; }
+  .url code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 13px Consolas, ui-monospace, monospace; color: var(--ac); user-select: all; }
+  button { font: inherit; font-size: 14px; font-weight: 500; color: var(--tx); background: var(--s2); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 16px; cursor: pointer; }
+  button.primary { background: var(--ac); color: var(--on); border-color: var(--ac); box-shadow: var(--glow); }
+  button:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 14px; }
+  .checks div { display: flex; align-items: center; gap: 8px; color: var(--sb); }
+  .checks div.ok { color: var(--tx); }
+  .meter { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .big { font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+  .unit { font: 13px Consolas, monospace; color: var(--sb); }
+  .tier { font-weight: 600; color: var(--ac); }
+  .facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--sb); }
+  .facts b { color: var(--tx); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .note { font-size: 13px; color: var(--sb); }
+  .warn { color: var(--warn); font-size: 14px; }
+  select { font: inherit; font-size: 14px; color: var(--tx); background: var(--s2); border: 1px solid var(--bd); border-radius: 10px; padding: 8px 10px; }
+  .drop { border: 1px dashed var(--bd); border-radius: 12px; padding: 14px; text-align: center; color: var(--sb); font-size: 14px; }
+  body.dragging .drop { border-color: var(--ac); color: var(--ac); box-shadow: var(--glow-s); }
+  .xrow { background: var(--bg); border: 1px solid var(--bd); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .xtop { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+  .xname { overflow-wrap: anywhere; }
+  .xnote { color: var(--sb); font-size: 12px; white-space: nowrap; }
+  .bar { height: 6px; background: var(--s2); border-radius: 3px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--ac); box-shadow: var(--glow-s); }
+  .xrow.failed .bar > i, .xrow.rejected .bar > i { background: var(--bad); box-shadow: none; }
+  button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><div class="mark"></div>UltraCast</div>
+    <span class="chip"><span class="dot" id="srvdot"></span><span id="srvtxt">Starting...</span></span>
+  </header>
+
+  <section class="card">
+    <h2>1. Connect your phone</h2>
+    <p class="muted">Join this laptop to your phone's hotspot, then open this address in your phone's browser. It works once and expires in <b id="left">2:00</b>.</p>
+    <div id="urls"></div>
+    <div class="row">
+      <button id="newcode" type="button">New code</button>
+      <span class="warn" id="alert"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. Share this screen</h2>
+    <div class="row"><button class="primary" id="share" type="button">Share my screen</button></div>
+    <div class="checks">
+      <div id="c-peer"><span class="dot"></span><span>Phone paired</span></div>
+      <div id="c-share"><span class="dot"></span><span>Sharing the screen</span></div>
+      <div id="c-link"><span class="dot"></span><span>Video link live</span></div>
+      <div id="c-audio"><span class="dot"></span><span>Sound included</span></div>
+      <div id="c-ctrl"><span class="dot"></span><span>Phone in control</span></div>
+    </div>
+    <label class="row note" style="gap:8px"><input type="checkbox" id="auto"> Let the phone take control without asking me</label>
+    <p class="note">Stop control any time with the bar at the top of your screen, or press Ctrl+Alt+J.</p>
+    <p class="warn" id="err"></p>
+  </section>
+
+  <section class="card">
+    <h2>3. Send and receive files</h2>
+    <div class="row"><button class="primary" id="sendfiles" type="button" disabled>Send files to phone</button>
+      <input type="file" id="picker" multiple hidden></div>
+    <div class="drop">Or drop files here (files only, no folders)</div>
+    <div id="xlist" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="row note" style="gap:14px">
+      <label>When the phone sends a file: <select id="recv"><option value="every">Ask me every time</option><option value="session">Ask once per connection</option><option value="auto">Accept automatically</option></select></label>
+      <label>Save to: <select id="save"><option value="default">UltraCast folder in Downloads</option><option value="ask">Ask me where each time</option></select></label>
+    </div>
+    <p class="note">Files from the phone are saved safely: a half-delivered file never looks finished.</p>
+  </section>
+
+  <section class="card">
+    <h2>Link health</h2>
+    <div class="meter"><span class="big" id="mbps">0.0</span><span class="unit">Mbps sent</span><span class="tier" id="tier">-</span></div>
+    <div class="facts"><span>Available <b id="avail">-</b></span><span>Delay <b id="rtt">-</b></span><span>Picture <b id="pic">-</b></span><span>Rate <b id="fps">-</b></span></div>
+    <p class="note">Quality adjusts by itself to match the network. This is a test console for steps 2, 3 and 4. The real Devices screen, the ring and the Add new device flow arrive in step 5.</p>
+  </section>
+</div>
+<script src="host-rtc.js"></script>
+<script src="transfer.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'">
+<title>UltraCast control</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #141B2D; color: #E8ECF4; font: 14px 'Segoe UI', system-ui, sans-serif; overflow: hidden; user-select: none; }
+  body { display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border: 1px solid #22D3EE; border-radius: 12px; box-shadow: inset 0 0 14px rgba(34,211,238,.25); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #22D3EE; box-shadow: 0 0 10px rgba(34,211,238,.9); animation: p 1.4s ease-in-out infinite; }
+  @keyframes p { 50% { opacity: .35; } }
+  .t { flex: 1; line-height: 1.2; }
+  .t small { display: block; color: #8F9BB3; font-size: 11px; }
+  button { font: inherit; font-weight: 600; color: #031318; background: #22D3EE; border: 0; border-radius: 9px; padding: 8px 18px; cursor: pointer; }
+  button:hover { background: #67E8F9; }
+</style>
+</head>
+<body>
+  <span class="dot"></span>
+  <div class="t">Phone is controlling this laptop<small>Stop any time: Ctrl+Alt+J</small></div>
+  <button id="stop" type="button">Stop</button>
+  <script src="banner.js"></script>
+</body>
+</html>

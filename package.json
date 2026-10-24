@@ -1,0 +1,22 @@
+{
+  "name": "ultracast-windows",
+  "version": "0.4.0",
+  "description": "UltraCast laptop app: pairing server, screen sharing and phone control",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js"
+  },
+  "dependencies": {
+    "koffi": "^3.3.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

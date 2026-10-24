@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UltraCast</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0B0F1A; color: #E8ECF4; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; overflow: hidden; }
+  #card { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+  .box { max-width: 320px; }
+  .mark { width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 16px; background: #22D3EE; box-shadow: 0 0 24px rgba(34,211,238,.5); }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { margin: 0; color: #8F9BB3; line-height: 1.5; }
+  #state { margin-top: 18px; font-weight: 500; color: #22D3EE; }
+  #state.bad { color: #F87171; }
+  body { display: flex; flex-direction: column; }
+  #stage { position: relative; flex: 1; min-height: 0; }
+  #card { z-index: 1; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #bar { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); background: #0E1424; border-top: 1px solid #26314F; }
+  #bar .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #stats { flex: 1; min-width: 0; font: 13px ui-monospace, Consolas, monospace; color: #8F9BB3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #stats b { color: #22D3EE; font-weight: 500; }
+  #note { font-size: 13px; color: #FBBF24; min-height: 0; }
+  button { font: inherit; font-size: 14px; font-weight: 500; color: #E8ECF4; background: #1B2440; border: 1px solid #26314F; border-radius: 12px; padding: 9px 14px; }
+  button.on { background: #22D3EE; color: #031318; border-color: #22D3EE; }
+  #xfer { display: flex; flex-direction: column; gap: 6px; }
+  .xr { background: #141B2D; border: 1px solid #26314F; border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+  .xr .t { display: flex; justify-content: space-between; gap: 8px; }
+  .xr .n { overflow-wrap: anywhere; } .xr .s { color: #8F9BB3; white-space: nowrap; }
+  .xr .b { height: 5px; background: #1B2440; border-radius: 3px; margin: 6px 0 2px; overflow: hidden; } .xr .b i { display: block; height: 100%; background: #22D3EE; }
+  .xr.failed .b i, .xr.rejected .b i { background: #F87171; }
+  .xr button { padding: 3px 10px; font-size: 12px; border-radius: 8px; margin-top: 4px; }
+  #ask { position: fixed; inset: 0; z-index: 5; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #ask .box2 { background: #141B2D; border: 1px solid #26314F; border-radius: 16px; padding: 20px; max-width: 340px; width: 100%; }
+  #ask h2 { margin: 0 0 8px; font-size: 18px; } #ask .nm { overflow-wrap: anywhere; font-weight: 500; } #ask .row2 { display: flex; gap: 10px; margin-top: 16px; } #ask .row2 button { flex: 1; }
+  #kb { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px; resize: none; pointer-events: none; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="card">
+      <div class="box">
+        <div class="mark"></div>
+        <h1>UltraCast</h1>
+        <p id="msg">Connecting to your laptop...</p>
+        <p id="state"></p>
+      </div>
+    </div>
+    <video id="v" autoplay playsinline muted hidden></video>
+  </div>
+  <div id="bar" hidden>
+    <div class="row"><div id="stats">Live</div></div>
+    <div id="xfer"></div>
+    <div id="note"></div>
+    <div class="row">
+      <button id="ctl" type="button">Take control</button>
+      <button id="kbtn" type="button" hidden>Keyboard</button>
+      <button id="mode" type="button" hidden>Touch</button>
+      <button id="sendf" type="button">Send files</button>
+      <input type="file" id="pick" multiple hidden>
+      <button id="snd" type="button">Sound off</button>
+      <button id="fs" type="button">Full screen</button>
+    </div>
+  </div>
+  <div id="ask" hidden>
+    <div class="box2">
+      <h2>The laptop wants to send a file</h2>
+      <p class="nm" id="askname"></p><p id="asksize"></p>
+      <div class="row2"><button id="askno" type="button">Decline</button><button id="askyes" type="button" class="on">Accept</button></div>
+    </div>
+  </div>
+  <textarea id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Typing"></textarea>
+<script src="/transfer.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var msg = $('msg'), state = $('state'), card = $('card'), video = $('v'), bar = $('bar');
+  var snd = $('snd'), stats = $('stats');
+  var ctl = $('ctl'), kbtn = $('kbtn'), modeBtn = $('mode'), note = $('note'), kb = $('kb');
+  var reasons = {
+    'expired': 'This code has expired. Ask the laptop for a new one.',
+    'bad-token': 'That code is not valid. Open the address shown on your laptop again.',
+    'locked': 'Too many wrong tries. Ask the laptop for a new code.',
+    'busy': 'Another phone is already connected.'
+  };
+
+  var token = new URLSearchParams(location.search).get('t');
+  history.replaceState(null, '', location.pathname); // keep the one-time code out of the address bar
+
+  if (!token) { msg.textContent = 'Open the address shown on your laptop to connect.'; return; }
+
+  var ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  var paired = false, pc = null, dc = null, fdc = null, chain = Promise.resolve(), statT = null, hasAudio = false;
+  var lastBytes = 0, lastT = 0;
+
+  function sendWs(o) { if (ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function showCard(m, s, bad) {
+    card.hidden = false; video.hidden = true; bar.hidden = true;
+    msg.textContent = m; state.textContent = s || ''; state.className = bad ? 'bad' : '';
+  }
+  function showVideo() { card.hidden = true; video.hidden = false; bar.hidden = false; }
+
+  function resetCall() {
+    if (statT) { clearInterval(statT); statT = null; }
+    if (dc) { try { dc.close(); } catch (e) {} dc = null; }
+    if (fdc) { try { fdc.close(); } catch (e) {} fdc = null; }
+    tx.linkDown(); sendf.hidden = true;
+    setCtl('off');
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    video.srcObject = null; lastBytes = 0; lastT = 0;
+  }
+
+  function paintSound() {
+    if (!hasAudio) { snd.textContent = 'No sound'; snd.className = ''; return; }
+    snd.textContent = video.muted ? 'Sound off' : 'Sound on';
+    snd.className = video.muted ? '' : 'on';
+  }
+  snd.addEventListener('click', function () {
+    if (!hasAudio) return;
+    video.muted = !video.muted; // the browser only allows sound after a tap, so it starts muted
+    video.play().catch(function () {});
+    paintSound();
+  });
+  $('fs').addEventListener('click', function () {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch (e) {}
+  });
+
+  function pollStats() {
+    if (!pc) return;
+    pc.getStats().then(function (stats_) {
+      stats_.forEach(function (r) {
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          var mbps = 0;
+          if (lastT && r.timestamp > lastT) mbps = (r.bytesReceived - lastBytes) * 8 / ((r.timestamp - lastT) / 1000) / 1e6;
+          lastBytes = r.bytesReceived; lastT = r.timestamp;
+          stats.innerHTML = '<b>' + mbps.toFixed(1) + ' Mbps</b>' +
+            (r.frameWidth ? ' &middot; ' + r.frameWidth + 'x' + r.frameHeight : '') +
+            (r.framesPerSecond ? ' &middot; ' + Math.round(r.framesPerSecond) + ' fps' : '');
+        }
+      });
+    }).catch(function () {});
+  }
+
+
+  // ================= control (step 3) =================
+  var ctlState = 'off', askT = null;
+  var mode = 'touch';
+  try { if (localStorage.getItem('uc-mode') === 'pad') mode = 'pad'; } catch (e) {}
+
+  function say(t) { note.textContent = t || ''; }
+  function out(o) { if (dc && dc.readyState === 'open') { try { dc.send(JSON.stringify(o)); } catch (e) {} } }
+
+  function setCtl(st) {
+    ctlState = st;
+    if (askT) { clearTimeout(askT); askT = null; }
+    ctl.textContent = st === 'on' ? 'Release' : st === 'asking' ? 'Asking the laptop...' : 'Take control';
+    ctl.className = st === 'on' ? 'on' : '';
+    kbtn.hidden = modeBtn.hidden = st !== 'on';
+    modeBtn.textContent = mode === 'pad' ? 'Trackpad' : 'Touch';
+    if (st !== 'on') { kb.blur(); kbtn.className = ''; cancelGesture(); }
+  }
+  ctl.addEventListener('click', function () {
+    if (ctlState === 'on') { out({ t: 'rel' }); setCtl('off'); say(''); return; }
+    if (ctlState === 'asking') return;
+    if (!dc || dc.readyState !== 'open') { say('The control link is not ready yet. Try again in a moment.'); return; }
+    say('');
+    setCtl('asking');
+    out({ t: 'req' });
+    askT = setTimeout(function () { setCtl('off'); say('The laptop did not answer.'); }, 60000);
+  });
+  function onHost(e) {
+    var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'grant') { say(''); setCtl('on'); }
+    else if (m.t === 'deny') { setCtl('off'); say('The laptop said no.'); }
+    else if (m.t === 'revoked') { if (ctlState !== 'off') { setCtl('off'); say('Control was stopped on the laptop.'); } }
+  }
+  modeBtn.addEventListener('click', function () {
+    mode = mode === 'pad' ? 'touch' : 'pad';
+    try { localStorage.setItem('uc-mode', mode); } catch (e) {}
+    modeBtn.textContent = mode === 'pad' ? 'Trackpad' : 'Touch';
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && ctlState === 'on') { out({ t: 'rel' }); setCtl('off'); } });
+
+  // ---- sending, with moves squeezed to one per screen refresh ----
+  var pendM = null, pendW = { dx: 0, dy: 0 }, raf = 0;
+  function flush() {
+    raf = 0;
+    if (pendM) { out({ t: 'm', x: pendM.x, y: pendM.y }); pendM = null; }
+    if (pendW.dx || pendW.dy) { out({ t: 'w', dx: pendW.dx, dy: pendW.dy }); pendW = { dx: 0, dy: 0 }; }
+  }
+  function later() { if (!raf) raf = requestAnimationFrame(flush); }
+  function sendNow(o) { flush(); out(o); }
+
+  // where on the laptop screen (0 to 1) is this finger? The picture is letterboxed inside the video box.
+  function norm(cx, cy) {
+    var r = video.getBoundingClientRect(), vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+    var sc = Math.min(r.width / vw, r.height / vh), w = vw * sc, h = vh * sc;
+    var ox = r.left + (r.width - w) / 2, oy = r.top + (r.height - h) / 2;
+    return { x: Math.min(1, Math.max(0, (cx - ox) / w)), y: Math.min(1, Math.max(0, (cy - oy) / h)), w: w, h: h };
+  }
+
+  // ---- gestures ----
+  var g = null, cursor = { x: 0.5, y: 0.5 }, longT = null;
+  function cancelGesture() { if (longT) { clearTimeout(longT); longT = null; } if (g && g.dragging) out({ t: 'u', b: 'l' }); g = null; }
+  function dist(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+  function midp(a, b) { return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 }; }
+
+  video.addEventListener('touchstart', function (e) {
+    if (ctlState !== 'on') return;
+    e.preventDefault();
+    var t = e.touches;
+    if (t.length === 1) {
+      var p = norm(t[0].clientX, t[0].clientY);
+      g = { kind: 'one', sx: t[0].clientX, sy: t[0].clientY, lx: t[0].clientX, ly: t[0].clientY, moved: false, dragging: false, long: false, start: p };
+      if (mode === 'touch') { cursor = { x: p.x, y: p.y }; pendM = { x: p.x, y: p.y }; flush(); }
+      longT = setTimeout(function () {
+        longT = null;
+        if (g && g.kind === 'one' && !g.moved) { g.long = true; sendNow({ t: 'c', b: 'r' }); try { navigator.vibrate && navigator.vibrate(20); } catch (x) {} }
+      }, 500);
+    } else if (t.length === 2) {
+      if (longT) { clearTimeout(longT); longT = null; }
+      if (g && g.dragging) out({ t: 'u', b: 'l' });
+      var m = midp(t[0], t[1]);
+      g = { kind: 'two', d0: dist(t[0], t[1]), ld: dist(t[0], t[1]), mx: m.x, my: m.y, lx: m.x, ly: m.y, how: null, acc: 0 };
+    } else { cancelGesture(); g = { kind: 'none' }; }
+  }, { passive: false });
+
+  video.addEventListener('touchmove', function (e) {
+    if (ctlState !== 'on' || !g) return;
+    e.preventDefault();
+    var t = e.touches;
+    if (g.kind === 'one' && t.length === 1) {
+      var cx = t[0].clientX, cy = t[0].clientY;
+      if (!g.moved && Math.hypot(cx - g.sx, cy - g.sy) > 10) {
+        g.moved = true;
+        if (longT) { clearTimeout(longT); longT = null; }
+        if (mode === 'touch') { g.dragging = true; sendNow({ t: 'd', b: 'l' }); }
+      }
+      if (g.moved && !g.long) {
+        if (mode === 'touch') { var p = norm(cx, cy); cursor = { x: p.x, y: p.y }; pendM = { x: p.x, y: p.y }; }
+        else {
+          var n = norm(cx, cy);
+          cursor = { x: Math.min(1, Math.max(0, cursor.x + (cx - g.lx) / n.w * 1.6)), y: Math.min(1, Math.max(0, cursor.y + (cy - g.ly) / n.h * 1.6)) };
+          pendM = { x: cursor.x, y: cursor.y };
+        }
+        later();
+      }
+      g.lx = cx; g.ly = cy;
+    } else if (g.kind === 'two' && t.length === 2) {
+      var d = dist(t[0], t[1]), m = midp(t[0], t[1]);
+      if (!g.how) {
+        if (Math.abs(d - g.d0) > 28) g.how = 'pinch';
+        else if (Math.hypot(m.x - g.mx, m.y - g.my) > 12) g.how = 'scroll';
+      }
+      if (g.how === 'scroll') { pendW.dx += m.x - g.lx; pendW.dy += m.y - g.ly; later(); }
+      else if (g.how === 'pinch') {
+        g.acc += (d - g.ld) / 70;
+        if (Math.abs(g.acc) >= 1) { var k = Math.trunc(g.acc); g.acc -= k; sendNow({ t: 'z', dz: k }); }
+      }
+      g.ld = d; g.lx = m.x; g.ly = m.y;
+    }
+  }, { passive: false });
+
+  function endTouch(e) {
+    if (ctlState !== 'on' || !g) return;
+    e.preventDefault();
+    if (longT) { clearTimeout(longT); longT = null; }
+    if (g.kind === 'one' && e.touches.length === 0) {
+      if (g.dragging) { flush(); out({ t: 'u', b: 'l' }); }
+      else if (!g.moved && !g.long) sendNow({ t: 'c', b: 'l' });
+      g = null;
+    } else if (e.touches.length === 0) { flush(); g = null; }
+    else if (g.kind === 'two' && e.touches.length < 2) { flush(); g = { kind: 'none' }; }
+  }
+  video.addEventListener('touchend', endTouch, { passive: false });
+  video.addEventListener('touchcancel', function () { cancelGesture(); }, { passive: true });
+
+  // ---- typing ----
+  // The phone's keyboard only talks to a text box. We keep a hidden box holding one invisible
+  // character so that pressing Backspace always has something to delete (and so produces an event).
+  var SENT = '​', composing = false, comp = '';
+  function resetKb() { kb.value = SENT; try { kb.setSelectionRange(1, 1); } catch (e) {} }
+  function typeDiff(cur) {
+    var i = 0; while (i < comp.length && i < cur.length && comp[i] === cur[i]) i++;
+    for (var n = comp.length - i; n > 0; n--) out({ t: 'key', k: 'Backspace' });
+    if (cur.length > i) out({ t: 'k', s: cur.slice(i) });
+    comp = cur;
+  }
+  kbtn.addEventListener('click', function () {
+    if (document.activeElement === kb) { kb.blur(); return; }
+    resetKb(); kb.focus();
+  });
+  kb.addEventListener('focus', function () { kbtn.className = 'on'; });
+  kb.addEventListener('blur', function () { kbtn.className = ''; composing = false; comp = ''; });
+  kb.addEventListener('compositionstart', function () { composing = true; comp = ''; });
+  kb.addEventListener('compositionend', function (e) {
+    composing = false;
+    typeDiff((kb.value.split(SENT).join('')));
+    comp = '';
+    resetKb();
+  });
+  kb.addEventListener('input', function (e) {
+    if (ctlState !== 'on') { resetKb(); return; }
+    var it = e.inputType || '';
+    if (it === 'insertLineBreak' || it === 'insertParagraph') { out({ t: 'key', k: 'Enter' }); comp = ''; resetKb(); return; }
+    var cur = kb.value.split(SENT).join('');
+    if (composing || e.isComposing) { typeDiff(cur); return; }
+    if (kb.value.indexOf(SENT) === -1 && cur.length === 0) { out({ t: 'key', k: 'Backspace' }); resetKb(); return; } // sentinel deleted = Backspace
+    if (cur.length) out({ t: 'k', s: cur });
+    comp = ''; resetKb();
+  });
+  kb.addEventListener('keydown', function (e) {
+    if (ctlState !== 'on' || composing) return;
+    var map = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, Tab: 1, Escape: 1, Delete: 1, Home: 1, End: 1 };
+    if (map[e.key]) { e.preventDefault(); out({ t: 'key', k: e.key }); }
+  });
+
+  // ================= files (step 4) =================
+  var sendf = $('sendf'), pick = $('pick'), xfer = $('xfer'), ask = $('ask');
+  sendf.hidden = true;
+  var PHONE_LIMIT = 500 * 1024 * 1024; // this web page keeps an incoming file in memory, so it takes up to 500 MB
+  function fmt(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+  function fileSend(d) {
+    var lane = fdc;
+    if (!lane || lane.readyState !== 'open') return Promise.reject(new Error('closed'));
+    lane.send(d);
+    if (lane.bufferedAmount <= 1024 * 1024) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      lane.onbufferedamountlow = function () { lane.onbufferedamountlow = null; res(); };
+      var prev = lane.onclose; lane.onclose = function () { if (prev) prev(); rej(new Error('closed')); };
+    });
+  }
+
+  var rx = null; // the file arriving now: { name, parts }
+  var tx = UltraTransfer.create({
+    prefix: 'P',
+    send: fileSend,
+    api: {
+      offer: function (name, size) {
+        if (size > PHONE_LIMIT) return Promise.resolve({ ok: false, reason: 'Too big for this phone web page (limit 500 MB)' });
+        return new Promise(function (res) {
+          $('askname').textContent = name; $('asksize').textContent = fmt(size);
+          ask.hidden = false;
+          $('askyes').onclick = function () { ask.hidden = true; rx = { name: name, parts: [] }; res({ ok: true, name: name }); };
+          $('askno').onclick = function () { ask.hidden = true; res({ ok: false, reason: 'Declined on the phone' }); };
+        });
+      },
+      chunk: function (b) { if (rx) rx.parts.push(b); },
+      end: function () {
+        if (!rx) return Promise.resolve({ ok: false, reason: 'Nothing was arriving' });
+        var r = rx; rx = null;
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(r.parts)); a.download = r.name;
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+        return Promise.resolve({ ok: true, path: 'your Downloads' });
+      },
+      abort: function () { rx = null; ask.hidden = true; }
+    },
+    confirmLarge: function (name, size) { return confirm('"' + name + '" is ' + (size / 1073741824).toFixed(1) + ' GB. Send it anyway?'); },
+    onChange: function (list) {
+      xfer.innerHTML = '';
+      list.slice(0, 3).forEach(function (e) {
+        var live = e.state === 'sending' || e.state === 'receiving' || e.state === 'asking';
+        var row = document.createElement('div'); row.className = 'xr ' + e.state;
+        var t = document.createElement('div'); t.className = 't';
+        var n = document.createElement('span'); n.className = 'n'; n.textContent = (e.dir === 'in' ? 'From laptop: ' : 'To laptop: ') + e.name + ' (' + fmt(e.size) + ')';
+        var st = document.createElement('span'); st.className = 's';
+        st.textContent = live ? (e.state === 'asking' ? 'Waiting...' : Math.round(e.size ? e.done / e.size * 100 : 100) + '%') : (e.note || e.state) + (e.path ? ' to ' + e.path : '');
+        t.appendChild(n); t.appendChild(st); row.appendChild(t);
+        var b = document.createElement('div'); b.className = 'b'; var f = document.createElement('i');
+        f.style.width = (e.size ? Math.min(100, e.done / e.size * 100) : (e.state === 'done' ? 100 : 0)) + '%'; b.appendChild(f); row.appendChild(b);
+        if (live) { var c = document.createElement('button'); c.type = 'button'; c.textContent = 'Cancel'; c.addEventListener('click', function () { tx.cancel(e.id); }); row.appendChild(c); }
+        xfer.appendChild(row);
+      });
+    }
+  });
+  sendf.addEventListener('click', function () { pick.click(); });
+  pick.addEventListener('change', function () { if (pick.files.length) tx.sendFiles(pick.files); pick.value = ''; });
+
+  async function onSignal(d) {
+    if (!d) return;
+    if (d.bye) { resetCall(); showCard('The laptop stopped sharing its screen.', 'Waiting for it to start again'); return; }
+    if (d.sdp) {
+      resetCall();
+      var thisPc = new RTCPeerConnection({ iceServers: [] });
+      pc = thisPc;
+      thisPc.onicecandidate = function (e) { if (e.candidate) sendWs({ type: 'signal', data: { candidate: e.candidate } }); };
+      thisPc.ontrack = function (e) {
+        var s = e.streams && e.streams[0];
+        if (s && video.srcObject !== s) video.srcObject = s;
+        hasAudio = !!(s && s.getAudioTracks().length) || e.track.kind === 'audio' || hasAudio;
+        video.play().catch(function () {});
+        paintSound();
+        if (e.track.kind === 'video') showVideo();
+      };
+      thisPc.ondatachannel = function (e) {
+        if (e.channel.label === 'files') {
+          fdc = e.channel; fdc.binaryType = 'arraybuffer'; fdc.bufferedAmountLowThreshold = 1024 * 1024;
+          fdc.onmessage = function (m) { tx.onMessage(m.data); };
+          fdc.onopen = function () { sendf.hidden = false; };
+          fdc.onclose = function () { sendf.hidden = true; tx.linkDown(); };
+          return;
+        }
+        if (e.channel.label !== 'input') return;
+        dc = e.channel;
+        dc.onmessage = onHost;
+        dc.onclose = function () { setCtl('off'); };
+      };
+      thisPc.onconnectionstatechange = function () {
+        if (thisPc.connectionState === 'failed') showCard('The video link failed.', 'Ask the laptop to share again', true);
+      };
+      hasAudio = false;
+      await thisPc.setRemoteDescription(d.sdp);
+      var ans = await thisPc.createAnswer();
+      await thisPc.setLocalDescription(ans);
+      sendWs({ type: 'signal', data: { sdp: thisPc.localDescription } });
+      statT = setInterval(pollStats, 1000);
+    } else if (d.candidate && pc) {
+      try { await pc.addIceCandidate(d.candidate); } catch (e) {}
+    }
+  }
+
+  ws.onopen = function () { sendWs({ type: 'hello', role: 'viewer', token: token }); };
+  ws.onmessage = function (e) {
+    var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (m.type === 'ready') {
+      paired = true;
+      showCard('Paired with your laptop.', 'Waiting for the laptop to share its screen');
+    } else if (m.type === 'error') {
+      showCard(reasons[m.reason] || 'Could not connect.', 'Not connected', true);
+    } else if (m.type === 'signal') {
+      chain = chain.then(function () { return onSignal(m.data); }).catch(function () {});
+    }
+  };
+  ws.onclose = function () {
+    if (paired) { resetCall(); showCard('The laptop disconnected.', 'Not connected', true); }
+  };
+})();
+</script>
+</body>
+</html>
