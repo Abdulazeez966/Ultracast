@@ -22,7 +22,7 @@ fs.cpSync(electronDist, out, { recursive: true });
 const app = path.join(out, 'resources', 'app');
 fs.mkdirSync(app, { recursive: true });
 console.log('Adding UltraCast...');
-['main.js', 'preload.js', 'banner-preload.js', 'inject.js', 'filesafe.js', 'server.js'].forEach((f) => fs.copyFileSync(path.join(root, f), path.join(app, f)));
+['main.js', 'preload.js', 'banner-preload.js', 'inject.js', 'filesafe.js', 'server.js', 'devices.js'].forEach((f) => fs.copyFileSync(path.join(root, f), path.join(app, f)));
 ['renderer', 'public'].forEach((d) => fs.cpSync(path.join(root, d), path.join(app, d), { recursive: true }));
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

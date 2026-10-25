@@ -29,3 +29,10 @@ Join the laptop to your phone's hotspot, press "New code", open the address on t
 - A trusted phone comes back later by opening the laptop's steady address (shown under Devices). No code, no number. Remove it under Devices to end its trust.
 - Tests: `npm test` (unit), `xvfb-run -a node smoke-pairing.js` (full app flow, Linux) and the other `smoke-*.js` / `test-*.js` files.
 - Not yet verified on real hardware: everything in this step (see the plan doc).
+
+## Making a Windows installer (like VLC or VS Code)
+
+On the Windows laptop, in this folder: `npm install` then `npm run installer`.
+Result: `dist-installer/UltraCast-Setup-0.5.0.exe` - double-click it to install (Start menu and desktop shortcut, uninstaller in Windows Settings).
+Needs internet once, to fetch the installer tools. Windows SmartScreen will say "unknown publisher" because the installer is not code-signed (signing costs money); choose More info, then Run anyway.
+Not yet verified on Windows.

@@ -8,16 +8,59 @@
     "start": "electron .",
     "server": "node server.js",
     "package": "node make-exe.js",
-    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js && node test-trust.js"
+    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js && node test-trust.js",
+    "installer": "electron-builder --win nsis --x64"
   },
   "dependencies": {
     "koffi": "^3.3.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0"
   },
   "engines": {
     "node": ">=18"
+  },
+  "author": "Rheo",
+  "build": {
+    "appId": "com.rheo.ultracast",
+    "productName": "UltraCast",
+    "copyright": "UltraCast",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "banner-preload.js",
+      "inject.js",
+      "filesafe.js",
+      "server.js",
+      "devices.js",
+      "renderer/**",
+      "public/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UltraCast",
+      "artifactName": "UltraCast-Setup-${version}.exe"
+    }
   }
 }
