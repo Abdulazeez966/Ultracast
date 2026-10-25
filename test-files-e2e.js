@@ -13,7 +13,7 @@ async function until(fn, ms, w) { const end = Date.now() + ms; while (Date.now()
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 (async () => {
-  const s = await start({ port: 0 }); const pairing = s.newPairing();
+  const s = await start({ port: 0, trust: { lookup: (id) => (id === 'dev1' ? 'secret1' : null), name: () => 'Test phone' } }); const pairing = s.newPairing();
   const browser = await chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
   console.log('Testing file transfer through the real server on port ' + s.port);
   const hostPage = await browser.newPage();
@@ -40,7 +40,8 @@ const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, acceptDownloads: true });
   const phone = await ctx.newPage();
-  await phone.goto('http://127.0.0.1:' + s.port + '/?t=' + pairing.token);
+  await phone.addInitScript(() => localStorage.setItem('uc-device', JSON.stringify({ id: 'dev1', secret: 'secret1' })));
+  await phone.goto('http://127.0.0.1:' + s.port + '/');
   await sleep(800);
   await hostPage.evaluate(() => window.H.startShare());
   await until(() => phone.evaluate(() => { const v = document.getElementById('v'); return !v.hidden && v.videoWidth > 0; }), 15000, 'video');

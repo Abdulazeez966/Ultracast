@@ -30,7 +30,9 @@ let ok = 0; const say = (s, pass) => { console.log((pass ? '  ok   ' : '  FAIL '
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, acceptDownloads: true });
   const phone = await ctx.newPage();
   await phone.goto('http://127.0.0.1:' + port + '/?t=' + token);
-  await until(() => win.evaluate(() => document.getElementById('c-peer').className === 'ok'), 6000, 'paired');
+  await until(async () => /^\d{4}$/.test(await win.evaluate(() => Array.from(document.querySelectorAll('#sas span')).map((s) => s.textContent).join(''))), 15000, 'matching number');
+  await win.click('#sas-yes');
+  await until(() => win.evaluate(() => !document.getElementById('v-control').hidden && !document.getElementById('share').disabled), 12000, 'paired');
   await win.click('#share');
   await until(() => phone.evaluate(() => !document.getElementById('sendf').hidden), 20000, 'files lane');
   say('Send files appears on the phone and the laptop button is enabled', await win.evaluate(() => !document.getElementById('sendfiles').disabled));

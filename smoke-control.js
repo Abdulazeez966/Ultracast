@@ -22,7 +22,9 @@ async function until(fn, ms, what) { const end = Date.now() + ms; while (Date.no
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
   const phone = await ctx.newPage(); const cdp = await ctx.newCDPSession(phone);
   await phone.goto('http://127.0.0.1:' + port + '/?t=' + token);
-  await until(() => win.evaluate(() => document.getElementById('c-peer').className === 'ok'), 6000, 'paired');
+  await until(async () => /^\d{4}$/.test(await win.evaluate(() => Array.from(document.querySelectorAll('#sas span')).map((s) => s.textContent).join(''))), 15000, 'matching number');
+  await win.click('#sas-yes');
+  await until(() => win.evaluate(() => !document.getElementById('v-control').hidden && !document.getElementById('share').disabled), 12000, 'paired');
   await win.click('#share');
   await until(() => phone.evaluate(() => { const v = document.getElementById('v'); return !v.hidden && v.videoWidth > 0; }), 20000, 'video');
   console.log('video on phone: yes');
@@ -35,7 +37,7 @@ async function until(fn, ms, what) { const end = Date.now() + ms; while (Date.no
   const banner = app.windows().find((w) => w !== win);
   await until(async () => { try { return await banner.evaluate(() => !!document.getElementById('stop')); } catch (e) { return false; } }, 6000, 'banner loaded');
   console.log('banner text:', (await banner.evaluate(() => document.body.innerText)).replace(/\n/g, ' | '));
-  console.log('laptop tick Phone in control:', await win.evaluate(() => document.getElementById('c-ctrl').className));
+  console.log('laptop tick Phone in control:', await win.evaluate(() => String(!document.getElementById('ctl-card').hidden)));
 
   const r = await phone.evaluate(() => { const b = document.getElementById('v').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y, id: 0 }] });
@@ -48,7 +50,7 @@ async function until(fn, ms, what) { const end = Date.now() + ms; while (Date.no
   await until(() => phone.evaluate(() => document.getElementById('ctl').textContent === 'Take control'), 5000, 'phone notified');
   console.log('after Stop: phone back to Take control, note =', await phone.evaluate(() => document.getElementById('note').textContent));
   await until(() => app.windows().length === 1, 4000, 'banner closed');
-  console.log('banner closed: yes; laptop tick:', JSON.stringify(await win.evaluate(() => document.getElementById('c-ctrl').className)));
+  console.log('banner closed: yes; laptop tick:', JSON.stringify(await win.evaluate(() => String(!document.getElementById('ctl-card').hidden))));
 
   logs.length = 0;
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y, id: 0 }] });

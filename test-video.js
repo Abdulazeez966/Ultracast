@@ -21,7 +21,7 @@ async function until(fn, ms, what) {
 }
 
 (async () => {
-  const s = await start({ port: 0 });
+  const s = await start({ port: 0, trust: { lookup: (id) => (id === 'dev1' ? 'secret1' : null), name: () => 'Test phone' } });
   const pairing = s.newPairing();
   const browser = await chromium.launch({
     args: ['--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'],
@@ -50,7 +50,8 @@ async function until(fn, ms, what) {
   });
 
   const phone = await browser.newPage();
-  await phone.goto('http://127.0.0.1:' + s.port + '/?t=' + pairing.token);
+  await phone.addInitScript(() => localStorage.setItem('uc-device', JSON.stringify({ id: 'dev1', secret: 'secret1' })));
+  await phone.goto('http://127.0.0.1:' + s.port + '/');
 
   await check('phone page pairs and the laptop sees it', async () => {
     await until(() => phone.evaluate(() => document.getElementById('state').textContent.includes('Waiting')), 4000, 'phone paired');

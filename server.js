@@ -24,6 +24,9 @@ const TOKEN_TTL_MS = 2 * 60 * 1000; // a pairing code works for 2 minutes
 const MAX_BAD_TRIES = 5;            // wrong codes allowed before the code is locked
 const HELLO_TIMEOUT_MS = 5000;      // a new connection must say hello within 5 seconds
 const MAX_MESSAGE_BYTES = 64 * 1024;
+const PROOF_TIMEOUT_MS = 5000;      // a returning phone must answer the challenge within 5 seconds
+const MAX_BAD_PROOFS = 5;           // wrong proofs from one address before it is locked out
+const PROOF_LOCK_MS = 60 * 1000;
 
 // ---------- helpers ----------
 
@@ -64,6 +67,15 @@ function safeEqual(a, b) {
   return A.length === B.length && crypto.timingSafeEqual(A, B);
 }
 
+// What a returning phone must send back to prove it holds the secret.
+function proofFor(secret, nonce) {
+  return crypto.createHmac('sha256', String(secret)).update('ultracast-proof:' + nonce).digest('hex');
+}
+
+function cleanName(n) {
+  return String(n == null ? '' : n).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40);
+}
+
 function send(ws, obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
@@ -77,12 +89,19 @@ function start(options = {}) {
   // The laptop app proves it is the real host with this key. It stays in memory only.
   const hostKey = crypto.randomBytes(24).toString('hex');
 
+  const trust = options.trust || { lookup: () => null, name: () => null };
+  const badProofs = new Map(); // address -> { n, lockedUntil }
+
   let pairing = null;   // { token, expires, badTries }
   let host = null;      // the laptop app's connection
   let viewer = null;    // the paired phone's connection
 
   const viewerPage = fs.readFileSync(path.join(__dirname, 'public', 'viewer.html'));
-  const transferJs = fs.readFileSync(path.join(__dirname, 'renderer', 'transfer.js'));
+  // The few scripts the phone page needs (both also run inside the laptop window).
+  const scripts = {
+    '/transfer.js': fs.readFileSync(path.join(__dirname, 'renderer', 'transfer.js')),
+    '/sas.js': fs.readFileSync(path.join(__dirname, 'renderer', 'sas.js')),
+  };
 
   const server = http.createServer((req, res) => {
     if (!isPrivate(req.socket.remoteAddress)) {
@@ -101,9 +120,9 @@ function start(options = {}) {
       res.end(viewerPage);
       return;
     }
-    if (req.method === 'GET' && url === '/transfer.js') {
+    if (req.method === 'GET' && Object.prototype.hasOwnProperty.call(scripts, url)) {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
-      res.end(transferJs);
+      res.end(scripts[url]);
       return;
     }
     res.writeHead(404); res.end('Not found');
@@ -138,7 +157,24 @@ function start(options = {}) {
           if (host && host !== ws) host.close(1000, 'replaced');
           host = ws; ws.role = 'host';
           send(ws, { type: 'ready', role: 'host' });
-          if (viewer) send(ws, { type: 'peer-joined' });
+          if (viewer) send(ws, { type: 'peer-joined', trusted: !!viewer.deviceId, deviceId: viewer.deviceId || null, name: viewer.deviceName || '' });
+          return;
+        }
+
+        if (msg.role === 'viewer' && typeof msg.deviceId === 'string' && !msg.token) {
+          // A phone that was added before: it must answer a fresh challenge with a proof made from its secret.
+          const rec = badProofs.get(remote);
+          if (rec && rec.lockedUntil > Date.now()) { send(ws, { type: 'error', reason: 'locked' }); ws.close(1008, 'locked'); return; }
+          const secret = trust.lookup(msg.deviceId);
+          if (!secret) {
+            noteBadProof(remote);
+            send(ws, { type: 'error', reason: 'unknown-device' }); ws.close(1008, 'unknown-device'); return;
+          }
+          if (viewer) { send(ws, { type: 'error', reason: 'busy' }); ws.close(1008, 'busy'); return; }
+          const nonce = crypto.randomBytes(16).toString('hex');
+          ws.role = 'challenge'; ws.challenge = { deviceId: msg.deviceId, nonce, secret };
+          ws.proofTimer = setTimeout(() => { if (ws.role === 'challenge') ws.close(1008, 'proof-timeout'); }, PROOF_TIMEOUT_MS);
+          send(ws, { type: 'challenge', nonce });
           return;
         }
 
@@ -157,14 +193,32 @@ function start(options = {}) {
           if (viewer) { send(ws, { type: 'error', reason: 'busy' }); ws.close(1008, 'busy'); return; }
 
           pairing = null;               // the code is now used up
-          viewer = ws; ws.role = 'viewer'; ws.remote = remote;
-          send(ws, { type: 'ready', role: 'viewer' });
-          send(host, { type: 'peer-joined' });
-          events.emit('paired', { from: remote });
+          viewer = ws; ws.role = 'viewer'; ws.remote = remote; ws.deviceId = null; ws.deviceName = cleanName(msg.name);
+          send(ws, { type: 'ready', role: 'viewer', trusted: false });
+          send(host, { type: 'peer-joined', trusted: false, deviceId: null, name: ws.deviceName });
+          events.emit('paired', { from: remote, trusted: false, deviceId: null, name: ws.deviceName });
           return;
         }
 
         ws.close(1008, 'unknown-role');
+        return;
+      }
+
+      // ----- a returning phone answering the challenge -----
+      if (ws.role === 'challenge') {
+        if (msg.type !== 'proof' || typeof msg.mac !== 'string') { ws.close(1008, 'proof-required'); return; }
+        clearTimeout(ws.proofTimer);
+        const c = ws.challenge; ws.challenge = null;
+        if (!safeEqual(msg.mac, proofFor(c.secret, c.nonce))) {
+          noteBadProof(remote);
+          send(ws, { type: 'error', reason: 'bad-proof' }); ws.close(1008, 'bad-proof'); return;
+        }
+        if (viewer) { send(ws, { type: 'error', reason: 'busy' }); ws.close(1008, 'busy'); return; }
+        badProofs.delete(remote);
+        viewer = ws; ws.role = 'viewer'; ws.remote = remote; ws.deviceId = c.deviceId; ws.deviceName = trust.name(c.deviceId) || '';
+        send(ws, { type: 'ready', role: 'viewer', trusted: true });
+        send(host, { type: 'peer-joined', trusted: true, deviceId: ws.deviceId, name: ws.deviceName });
+        events.emit('paired', { from: remote, trusted: true, deviceId: ws.deviceId, name: ws.deviceName });
         return;
       }
 
@@ -177,7 +231,7 @@ function start(options = {}) {
     });
 
     ws.on('close', () => {
-      clearTimeout(helloTimer);
+      clearTimeout(helloTimer); clearTimeout(ws.proofTimer);
       if (ws === host) host = null;
       if (ws === viewer) {
         viewer = null;
@@ -187,6 +241,13 @@ function start(options = {}) {
     });
     ws.on('error', () => {});
   });
+
+  function noteBadProof(addr) {
+    const r = badProofs.get(addr) || { n: 0, lockedUntil: 0 };
+    r.n += 1;
+    if (r.n >= MAX_BAD_PROOFS) { r.lockedUntil = Date.now() + PROOF_LOCK_MS; r.n = 0; }
+    badProofs.set(addr, r);
+  }
 
   // Drop connections that stopped answering.
   const heartbeat = setInterval(() => {
@@ -217,18 +278,21 @@ function start(options = {}) {
         };
       }
 
+      // Disconnects the phone (used by the Disconnect button).
+      function disconnect() { if (viewer) viewer.close(1000, 'host-disconnect'); }
+
       function close() {
         clearInterval(heartbeat);
         wss.clients.forEach((c) => c.terminate());
         return new Promise((r) => server.close(() => r()));
       }
 
-      resolve({ port: actualPort, hostKey, events, newPairing, close });
+      resolve({ port: actualPort, hostKey, events, newPairing, disconnect, close });
     });
   });
 }
 
-module.exports = { start, isPrivate, isLoopback, privateIPv4s };
+module.exports = { start, isPrivate, isLoopback, privateIPv4s, proofFor };
 
 // ---------- run directly: node server.js ----------
 

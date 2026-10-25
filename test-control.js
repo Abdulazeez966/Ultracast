@@ -11,7 +11,7 @@ async function check(name, fn) { try { await fn(); passed++; console.log('  ok  
 async function until(fn, ms, what) { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(100); } throw new Error('timed out waiting for ' + what); }
 
 (async () => {
-  const s = await start({ port: 0 });
+  const s = await start({ port: 0, trust: { lookup: (id) => (id === 'dev1' ? 'secret1' : null), name: () => 'Test phone' } });
   const pairing = s.newPairing();
   const browser = await chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
   console.log('Testing phone control through the real server on port ' + s.port);
@@ -39,7 +39,8 @@ async function until(fn, ms, what) { const end = Date.now() + ms; while (Date.no
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
   const phone = await ctx.newPage();
   const cdp = await ctx.newCDPSession(phone);
-  await phone.goto('http://127.0.0.1:' + s.port + '/?t=' + pairing.token);
+  await phone.addInitScript(() => localStorage.setItem('uc-device', JSON.stringify({ id: 'dev1', secret: 'secret1' })));
+  await phone.goto('http://127.0.0.1:' + s.port + '/');
   await until(() => hostPage.evaluate(() => true), 1000, 'host');
   await sleep(800);
   await hostPage.evaluate(() => window.H.startShare());

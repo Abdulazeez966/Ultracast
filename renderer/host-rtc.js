@@ -40,7 +40,7 @@
 
   // ---------- the host ----------
   function createHost(opts) {
-    var ws = null, pc = null, stream = null, peer = false, timer = null, ch = null, fch = null;
+    var ws = null, pc = null, stream = null, peer = false, timer = null, ch = null, fch = null, pch = null;
     var gov = { idx: 1, want: 1, count: 0 };
     var ema = 0, lastBytes = 0, lastT = 0, ticks = 0;
     var chain = Promise.resolve();
@@ -61,7 +61,12 @@
     function handle(m) {
       if (m.type === 'ready') status({ kind: 'server', up: true });
       else if (m.type === 'error') status({ kind: 'error', reason: m.reason });
-      else if (m.type === 'peer-joined') { peer = true; status({ kind: 'peer', present: true }); if (stream) startCall(); }
+      else if (m.type === 'peer-joined') {
+        peer = true;
+        status({ kind: 'peer', present: true, trusted: !!m.trusted, deviceId: m.deviceId || null, name: m.name || '' });
+        if (!m.trusted) startCall(true);   // a new phone: first a small private call just to show the matching number
+        else if (stream) startCall();
+      }
       else if (m.type === 'peer-left') { peer = false; status({ kind: 'peer', present: false }); closeCall(false); }
       else if (m.type === 'signal') {
         chain = chain.then(function () { return onSignal(m.data); })
@@ -71,16 +76,35 @@
 
     async function onSignal(d) {
       if (!pc || !d) return;
-      if (d.sdp) { await pc.setRemoteDescription(d.sdp); await applyTier(); }
+      if (d.sdp) { await pc.setRemoteDescription(d.sdp); if (!pch) await applyTier(); }
       else if (d.candidate) { try { await pc.addIceCandidate(d.candidate); } catch (e) {} }
     }
 
-    async function startCall() {
+    // pairMode: a tiny call with one lane ("pair") and no picture, used only to get the matching number.
+    async function startCall(pairMode) {
       closeCall(false);
       var thisPc = new RTCPeerConnection({ iceServers: [] }); // no internet helpers: both devices share a local network
       pc = thisPc;
       thisPc.onicecandidate = function (e) { if (e.candidate) sendWs({ type: 'signal', data: { candidate: e.candidate } }); };
-      thisPc.onconnectionstatechange = function () { status({ kind: 'link', state: thisPc.connectionState }); };
+      thisPc.onconnectionstatechange = function () { status({ kind: 'link', state: thisPc.connectionState, pair: !!pairMode }); };
+      if (pairMode) {
+        var pl = thisPc.createDataChannel('pair', { ordered: true });
+        pch = pl;
+        pl.onopen = function () {
+          var code = null;
+          try { code = root.UltraSas.sas(thisPc.localDescription.sdp, thisPc.remoteDescription.sdp); } catch (e) {}
+          status({ kind: 'sas', code: code });
+        };
+        pl.onmessage = function (e) {
+          if (typeof e.data !== 'string' || e.data.length > 1024) return;
+          var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+          if (m && typeof m === 'object' && opts.onPair) { try { opts.onPair(m); } catch (err) {} }
+        };
+        var pOffer = await thisPc.createOffer();
+        await thisPc.setLocalDescription(pOffer);
+        sendWs({ type: 'signal', data: { sdp: thisPc.localDescription } });
+        return;
+      }
       // A second lane on the same call, just for the phone's touches and typing (step 3).
       var lane = thisPc.createDataChannel('input', { ordered: true });
       ch = lane;
@@ -116,6 +140,7 @@
       if (timer) { clearInterval(timer); timer = null; }
       if (ch) { try { ch.close(); } catch (e) {} ch = null; }
       if (fch) { try { fch.close(); } catch (e) {} fch = null; }
+      if (pch) { try { pch.close(); } catch (e) {} pch = null; }
       if (pc) { try { pc.close(); } catch (e) {} pc = null; }
       if (tellPhone) sendWs({ type: 'signal', data: { bye: true } });
     }
@@ -170,7 +195,7 @@
       var v = stream.getVideoTracks()[0];
       if (v) v.addEventListener('ended', stopShare);
       status({ kind: 'share', on: true, audio: stream.getAudioTracks().length > 0 });
-      if (peer) await startCall();
+      if (peer && !pch) await startCall(); // while the matching-number step is open, the real call waits
     }
     function stopShare() {
       if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
@@ -192,10 +217,15 @@
       });
     }
 
+    // Sends one message on the pairing lane (only exists during the matching-number step).
+    function sendPair(obj) { if (pch && pch.readyState === 'open') pch.send(JSON.stringify(obj)); }
+    // Pairing is finished: drop the small call; if the screen is already being shared, start the real call.
+    function endPair() { if (!pch) return; closeCall(false); if (stream && peer) startCall(); }
+
     function send(obj) { if (ch && ch.readyState === 'open') ch.send(JSON.stringify(obj)); }
 
     connect();
-    return { startShare: startShare, stopShare: stopShare, close: close, send: send, fileSend: fileSend };
+    return { startShare: startShare, stopShare: stopShare, close: close, send: send, fileSend: fileSend, sendPair: sendPair, endPair: endPair };
   }
 
   var api = { createHost: createHost, pickTier: pickTier, step: step, TIERS: TIERS };

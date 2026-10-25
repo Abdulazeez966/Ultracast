@@ -18,7 +18,8 @@
 const { app, BrowserWindow, Menu, ipcMain, session, desktopCapturer, screen, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { start } = require('./server');
+const { start, privateIPv4s } = require('./server');
+const { createStore } = require('./devices');
 const { createInjector, createBackend } = require('./inject');
 const { sanitizeName, isRisky, uniqueName, openIncoming } = require('./filesafe');
 
@@ -30,20 +31,23 @@ app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 const HOTKEY = 'Control+Alt+J';
 
 let srv = null;
+let devices = null;
 let win = null;
 let banner = null;
 let injector = null;
 let controlling = false;
 let asking = false;
 let phoneAddr = '';
+let authorized = false;   // true only for a phone that is trusted (returned with its proof, or confirmed by the laptop's Yes)
 
 // ---------- settings (saved in a small file in the app's own data folder) ----------
 const DEFAULTS = {
   controlMode: 'ask',      // 'ask' = ask me every time, 'auto' = allow without asking
   receiveMode: 'every',    // files: 'every' = ask each time, 'session' = ask once per connection, 'auto' = accept automatically
   saveMode: 'default',     // files: 'default' = Downloads/UltraCast, 'ask' = choose a folder each time
+  theme: 'dark',           // 'dark', 'light' or 'system'
 };
-const CHOICES = { controlMode: ['ask', 'auto'], receiveMode: ['every', 'session', 'auto'], saveMode: ['default', 'ask'] };
+const CHOICES = { controlMode: ['ask', 'auto'], receiveMode: ['every', 'session', 'auto'], saveMode: ['default', 'ask'], theme: ['dark', 'light', 'system'] };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
@@ -177,7 +181,8 @@ function dropIncoming() { if (incoming && incoming.abort) incoming.abort(); inco
 
 // ---------- window ----------
 async function createWindow() {
-  srv = await start();
+  devices = createStore(path.join(app.getPath('userData'), 'devices.json'));
+  srv = await start({ trust: devices });
   injector = createInjector(createBackend());
 
   win = new BrowserWindow({
@@ -212,8 +217,8 @@ async function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
 
-  srv.events.on('paired', (e) => { phoneAddr = e.from || ''; tellWindow('ultracast:event', { type: 'paired', from: e.from }); });
-  srv.events.on('unpaired', () => { endControl('phone-left'); dropIncoming(); sessionAccepted = false; phoneAddr = ''; tellWindow('ultracast:event', { type: 'unpaired' }); });
+  srv.events.on('paired', (e) => { phoneAddr = e.from || ''; authorized = !!e.trusted; if (e.deviceId) devices.touch(e.deviceId); tellWindow('ultracast:event', { type: 'paired', from: e.from, trusted: !!e.trusted, deviceId: e.deviceId || null, name: e.name || '' }); });
+  srv.events.on('unpaired', () => { endControl('phone-left'); dropIncoming(); sessionAccepted = false; phoneAddr = ''; authorized = false; tellWindow('ultracast:event', { type: 'unpaired' }); });
   srv.events.on('bad-token', (e) => tellWindow('ultracast:event', { type: 'bad-token', from: e.from, tries: e.tries }));
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -225,9 +230,20 @@ const fromMain = (e) => win && !win.isDestroyed() && e.sender === win.webContent
 
 ipcMain.handle('ultracast:info', (e) => (fromMain(e) ? { port: srv.port, hostKey: srv.hostKey } : null));
 ipcMain.handle('ultracast:new-pairing', (e) => (fromMain(e) ? srv.newPairing() : null));
-ipcMain.handle('ultracast:control-request', (e) => (fromMain(e) ? decideControl() : false));
+ipcMain.handle('ultracast:control-request', (e) => (fromMain(e) && authorized ? decideControl() : false));
 ipcMain.on('ultracast:control-release', (e) => { if (fromMain(e)) endControl('released'); });
-ipcMain.on('ultracast:input', (e, msg) => { if (fromMain(e) && controlling && injector) injector.handle(msg); });
+ipcMain.on('ultracast:input', (e, msg) => { if (fromMain(e) && authorized && controlling && injector) injector.handle(msg); });
+ipcMain.handle('ultracast:addresses', (e) => (fromMain(e) ? privateIPv4s().map((n) => ({ network: n.name, url: 'http://' + n.address + ':' + srv.port + '/' })) : []));
+ipcMain.handle('ultracast:devices', (e) => (fromMain(e) ? devices.list() : []));
+// The laptop's "Yes, they match": only now is the phone added to the guest book and allowed in.
+ipcMain.handle('ultracast:device-trust', (e, name) => {
+  if (!fromMain(e) || !phoneAddr || authorized) return null;
+  authorized = true;
+  return devices.add(typeof name === 'string' ? name : '');
+});
+ipcMain.handle('ultracast:device-remove', (e, id) => (fromMain(e) && typeof id === 'string' ? devices.remove(id) : false));
+ipcMain.handle('ultracast:device-rename', (e, id, name) => (fromMain(e) && typeof id === 'string' && typeof name === 'string' ? devices.rename(id, name) : false));
+ipcMain.on('ultracast:disconnect', (e) => { if (fromMain(e)) srv.disconnect(); });
 ipcMain.handle('ultracast:get-settings', (e) => (fromMain(e) ? { ...settings } : null));
 ipcMain.handle('ultracast:set-settings', (e, next) => {
   if (!fromMain(e) || !next || typeof next !== 'object') return null;
@@ -235,7 +251,7 @@ ipcMain.handle('ultracast:set-settings', (e, next) => {
   saveSettings();
   return { ...settings };
 });
-ipcMain.handle('ultracast:file-offer', (e, name, size) => (fromMain(e) && typeof name === 'string' && Number.isSafeInteger(size) && size >= 0 ? acceptIncoming(name, size) : { ok: false, reason: 'Bad offer' }));
+ipcMain.handle('ultracast:file-offer', (e, name, size) => (fromMain(e) && authorized && typeof name === 'string' && Number.isSafeInteger(size) && size >= 0 ? acceptIncoming(name, size) : { ok: false, reason: 'Bad offer' }));
 ipcMain.on('ultracast:file-chunk', (e, buf) => { if (fromMain(e) && incoming && incoming.write && buf) incoming.write(Buffer.from(buf)); });
 ipcMain.handle('ultracast:file-end', (e) => {
   if (!fromMain(e) || !incoming || !incoming.finish) return { ok: false, reason: 'Nothing was arriving' };

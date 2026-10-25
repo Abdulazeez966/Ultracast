@@ -15,6 +15,7 @@
   p { margin: 0; color: #8F9BB3; line-height: 1.5; }
   #state { margin-top: 18px; font-weight: 500; color: #22D3EE; }
   #state.bad { color: #F87171; }
+  #state.code { font: 600 26px ui-monospace, Consolas, monospace; letter-spacing: .06em; }
   body { display: flex; flex-direction: column; }
   #stage { position: relative; flex: 1; min-height: 0; }
   #card { z-index: 1; }
@@ -75,6 +76,7 @@
   </div>
   <textarea id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Typing"></textarea>
 <script src="/transfer.js"></script>
+<script src="/sas.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -85,13 +87,27 @@
     'expired': 'This code has expired. Ask the laptop for a new one.',
     'bad-token': 'That code is not valid. Open the address shown on your laptop again.',
     'locked': 'Too many wrong tries. Ask the laptop for a new code.',
-    'busy': 'Another phone is already connected.'
+    'busy': 'Another phone is already connected.',
+    'unknown-device': 'The laptop no longer trusts this phone. Add it again from the laptop (Devices, Add new device).',
+    'bad-proof': 'The laptop did not accept this phone. Add it again from the laptop.'
   };
 
   var token = new URLSearchParams(location.search).get('t');
   history.replaceState(null, '', location.pathname); // keep the one-time code out of the address bar
 
-  if (!token) { msg.textContent = 'Open the address shown on your laptop to connect.'; return; }
+  // A phone that was added before keeps an id and a secret in this browser.
+  function loadDevice() { try { var d = JSON.parse(localStorage.getItem('uc-device')); return d && d.id && d.secret ? d : null; } catch (e) { return null; } }
+  function saveDevice(d) { try { localStorage.setItem('uc-device', JSON.stringify(d)); } catch (e) {} }
+  function forgetDevice() { try { localStorage.removeItem('uc-device'); } catch (e) {} }
+  var device = token ? null : loadDevice();
+
+  if (!token && !device) { msg.textContent = 'Open the address shown on your laptop to connect.'; return; }
+
+  // A friendly name for this phone, taken from the browser's own description of it.
+  function phoneName() {
+    var m = /;\s*([^;)]+?)\s+Build\//.exec(navigator.userAgent || '');
+    return (m && m[1]) || (/Android/.test(navigator.userAgent || '') ? 'Android phone' : 'Phone');
+  }
 
   var ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   var paired = false, pc = null, dc = null, fdc = null, chain = Promise.resolve(), statT = null, hasAudio = false;
@@ -404,6 +420,28 @@
         if (e.track.kind === 'video') showVideo();
       };
       thisPc.ondatachannel = function (e) {
+        if (e.channel.label === 'pair') {
+          thisPc.isPair = true;
+          var pdc = e.channel;
+          pdc.onopen = function () {
+            var code = null;
+            try { code = UltraSas.sas(thisPc.localDescription.sdp, thisPc.remoteDescription.sdp); } catch (x) {}
+            showCard('Your laptop should show this same number', code || '----');
+            state.className = 'code';
+          };
+          pdc.onmessage = function (ev) {
+            var pm; try { pm = JSON.parse(ev.data); } catch (x) { return; }
+            if (!pm || typeof pm !== 'object') return;
+            if (pm.t === 'trusted' && typeof pm.id === 'string' && typeof pm.secret === 'string') {
+              saveDevice({ id: pm.id, secret: pm.secret });
+              try { pdc.send(JSON.stringify({ t: 'stored' })); } catch (x) {}
+              showCard('Paired with your laptop.', 'Waiting for the laptop to share its screen');
+            } else if (pm.t === 'rejected') {
+              showCard('The laptop said the numbers did not match.', 'Not connected', true);
+            }
+          };
+          return;
+        }
         if (e.channel.label === 'files') {
           fdc = e.channel; fdc.binaryType = 'arraybuffer'; fdc.bufferedAmountLowThreshold = 1024 * 1024;
           fdc.onmessage = function (m) { tx.onMessage(m.data); };
@@ -417,7 +455,7 @@
         dc.onclose = function () { setCtl('off'); };
       };
       thisPc.onconnectionstatechange = function () {
-        if (thisPc.connectionState === 'failed') showCard('The video link failed.', 'Ask the laptop to share again', true);
+        if (thisPc.connectionState === 'failed' && !thisPc.isPair) showCard('The video link failed.', 'Ask the laptop to share again', true);
       };
       hasAudio = false;
       await thisPc.setRemoteDescription(d.sdp);
@@ -430,13 +468,21 @@
     }
   }
 
-  ws.onopen = function () { sendWs({ type: 'hello', role: 'viewer', token: token }); };
+  ws.onopen = function () {
+    if (token) sendWs({ type: 'hello', role: 'viewer', token: token, name: phoneName() });
+    else sendWs({ type: 'hello', role: 'viewer', deviceId: device.id });
+  };
   ws.onmessage = function (e) {
     var m; try { m = JSON.parse(e.data); } catch (x) { return; }
-    if (m.type === 'ready') {
+    if (m.type === 'challenge') {
+      // Prove this phone holds the secret without sending it.
+      sendWs({ type: 'proof', mac: UltraSas.hmacHex(device.secret, 'ultracast-proof:' + m.nonce) });
+    } else if (m.type === 'ready') {
       paired = true;
-      showCard('Paired with your laptop.', 'Waiting for the laptop to share its screen');
+      if (m.trusted) showCard('Connected to your laptop.', 'Waiting for the laptop to share its screen');
+      else showCard('Connecting securely...', 'Getting the matching number ready');
     } else if (m.type === 'error') {
+      if (m.reason === 'unknown-device') forgetDevice();
       showCard(reasons[m.reason] || 'Could not connect.', 'Not connected', true);
     } else if (m.type === 'signal') {
       chain = chain.then(function () { return onSignal(m.data); }).catch(function () {});
