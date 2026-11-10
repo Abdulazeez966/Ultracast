@@ -1,0 +1,70 @@
+{
+  "name": "ultracast-windows",
+  "version": "0.8.5",
+  "description": "UltraCast laptop app: pairing server, screen sharing and phone control",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "package": "node make-exe.js",
+    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js && node test-trust.js && node test-ping.js && node test-pairopen.js && node test-phonectl.js && node test-power.js && node test-pick.js && node test-sdpmac.js && node test-pcmplayer.js && node test-package.js && node test-heartbeat.js && node test-diag.js",
+    "installer": "electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "koffi": "^3.3.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Rheo",
+  "build": {
+    "appId": "com.rheo.ultracast",
+    "productName": "UltraCast",
+    "copyright": "UltraCast",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "banner-preload.js",
+      "inject.js",
+      "filesafe.js",
+      "server.js",
+      "devices.js",
+      "ping.js",
+      "diag.js",
+      "power.js",
+      "pick.js",
+      "renderer/**",
+      "public/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UltraCast",
+      "artifactName": "UltraCast-Setup-${version}.exe"
+    }
+  }
+}

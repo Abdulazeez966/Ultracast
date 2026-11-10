@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ws://127.0.0.1:*; img-src 'self' data:; font-src 'self'; media-src 'self' blob:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UltraCast</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+
+  <nav class="side" aria-label="Main">
+    <div class="brand"><div class="mark"></div>UltraCast</div>
+    <button type="button" class="nav on" data-view="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>Home</button>
+    <button type="button" class="nav" data-view="devices"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="13" height="10" rx="2"/><rect x="16" y="8" width="6" height="12" rx="1.5"/></svg>Devices</button>
+    <button type="button" class="nav" data-view="control" id="nav-control" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Control</button>
+    <button type="button" class="nav" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</button>
+    <div class="grow"></div>
+    <div class="chip"><span class="dot" id="srvdot"></span><span id="srvtxt">Starting...</span></div>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section class="view" id="v-home">
+      <h1>Home</h1>
+      <p class="muted">Choose what you want to do.</p>
+      <div class="cards">
+        <div class="card big">
+          <h2>Phone controls this laptop</h2>
+          <p class="muted">Show this screen on your phone and use the laptop by touch.</p>
+          <button type="button" class="primary" id="home-start">Start</button>
+        </div>
+        <div class="card big">
+          <h2>This laptop controls the phone</h2>
+          <p class="muted">Show the phone's screen here and use it with the mouse and keyboard. Needs the UltraCast Android app on the phone.</p>
+          <button type="button" class="primary" id="home-start-out">Start</button>
+        </div>
+      </div>
+      <div class="card"><div class="row"><span class="dot" id="home-dot"></span><span id="home-status">No phone connected</span></div></div>
+    </section>
+
+    <!-- DEVICES -->
+    <section class="view" id="v-devices" hidden>
+      <div class="head">
+        <div><h1>Devices</h1><p class="muted">Phones you trust. They connect without a new code.</p></div>
+        <button type="button" class="primary" id="add-device">+ Add new device</button>
+      </div>
+      <div class="label">Trusted</div>
+      <div id="dev-list" class="stack"></div>
+      <div class="label">How a trusted phone comes back</div>
+      <div class="card">
+        <p class="muted" style="margin:0">Open one of these addresses in the phone's browser while this app is running and the laptop is on the phone's hotspot.</p>
+        <div id="addr-list" class="stack"></div>
+      </div>
+      <div class="label">File transfers this session</div>
+      <div id="hist" class="stack"></div>
+    </section>
+
+    <!-- CONTROL -->
+    <section class="view" id="v-control" hidden>
+      <div class="head">
+        <div class="row" style="gap:14px">
+          <button type="button" class="icon" id="ctl-back" aria-label="Back to Devices">&#8592;</button>
+          <div><h1 id="ctl-name">Phone</h1><div class="sub"><span class="dot on"></span><span id="ctl-sub">Connected over your hotspot</span></div></div>
+        </div>
+        <button type="button" class="danger" id="disconnect">Disconnect</button>
+      </div>
+      <div class="seg" role="group" aria-label="Direction" style="align-self:flex-start">
+            <button type="button" class="on" id="dir-in">Phone controls this laptop</button>
+            <button type="button" id="dir-out">This laptop controls the phone</button>
+          </div>
+      <div class="ctl-grid">
+        <div class="stack" style="min-width:0">
+        <div class="card center" id="panel-in">
+          <div class="ringbox"><canvas id="ring" aria-label="Connection ring"></canvas>
+            <div class="ringtext"><div class="speed" id="speed">--</div><div class="unit" id="unit">Mbps</div><div class="pill" id="quality">Not sharing</div></div>
+          </div>
+          <div class="row wrap center">
+            <button type="button" class="primary" id="share" disabled>Share my screen</button>
+            <button type="button" id="sendfiles" disabled>Send files</button>
+            <input type="file" id="picker" multiple hidden>
+          </div>
+          <div class="drop">Or drop files here (files only, no folders)</div>
+          <p class="warn" id="err"></p>
+        </div>
+
+        <div class="card" id="panel-out" hidden>
+          <div class="row"><span class="dot" id="ph-dot"></span><b id="ph-title">Phone screen</b></div>
+          <p class="muted" id="ph-status">Ask the phone to share its screen. The phone owner is asked first.</p>
+          <div class="row wrap">
+            <button type="button" class="primary" id="ph-start">Ask phone to share</button>
+            <button type="button" id="ph-open" disabled>Open phone screen</button>
+            <button type="button" id="ph-stop" disabled>Stop</button>
+          </div>
+          <div class="row wrap">
+            <button type="button" id="ph-lock">Lock phone</button>
+            <button type="button" id="ph-power">Phone power menu</button>
+          </div>
+          <p class="muted small">The phone's screen opens on its own page. Click = tap, hold = long press, drag = swipe, wheel = scroll. Use the menu in its top right corner for Back, Home, rotate, full screen and more.</p>
+        </div>
+        </div>
+        <div class="stack">
+          <div class="card" id="sess-card">
+            <div class="label tight">Session</div>
+            <div class="kv"><span>Picture quality</span><b>Auto</b></div>
+            <div class="kv"><span>Delay</span><b id="i-delay">-</b></div>
+            <div class="kv"><span>Picture</span><b id="i-pic">-</b></div>
+            <div class="kv"><span>Sound</span><b id="i-sound">-</b></div>
+          </div>
+          <div class="card glow" id="ctl-card" hidden>
+            <div class="row"><span class="dot on"></span><b>Phone is in control</b></div>
+            <p class="muted" style="margin:6px 0 0">Stop it with the bar on top of your screen, or press <code>Ctrl+Alt+J</code>.</p>
+          </div>
+          <div class="card"><div class="label tight">Transfers</div><div id="xlist" class="stack"></div></div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- PHONE SCREEN (its own page) -->
+    <section class="view" id="v-screen" hidden>
+                <div id="ph-stage" class="phstage" tabindex="0" aria-label="Phone screen. Click to tap, hold to long-press, drag to swipe, scroll to scroll, type to type.">
+            <video id="ph-video" autoplay muted playsinline></video>
+            <div class="phhint" id="ph-hint">Nothing shared yet</div>
+            <div class="phlocked" id="ph-locked" hidden>The phone is locked. If it allows, tap its PIN here. UltraCast never stores or types a PIN for you.</div>
+          </div>
+      <button type="button" class="burger" id="sv-burger" aria-label="Menu" aria-haspopup="true" aria-expanded="false"><i></i><i></i><i></i></button>
+      <div class="menu" id="sv-menu" role="menu" hidden>
+        <div class="mlabel">Phone buttons</div>
+        <button type="button" role="menuitem" data-act="back">Back</button>
+        <button type="button" role="menuitem" data-act="home">Home</button>
+        <button type="button" role="menuitem" data-act="recents">Recents</button>
+        <button type="button" role="menuitem" data-act="notifications">Notifications</button>
+        <div class="mlabel">Turn the phone screen</div>
+        <button type="button" role="menuitem" data-act="rot-land">Landscape</button>
+        <button type="button" role="menuitem" data-act="rot-port">Portrait</button>
+        <button type="button" role="menuitem" data-act="rot-auto">Let the phone decide</button>
+        <div class="mlabel">Phone screen when it goes dark</div>
+        <button type="button" role="menuitem" data-act="aw-on">Keep phone screen on</button>
+        <button type="button" role="menuitem" data-act="aw-dark">Black out phone screen, keep it working</button>
+        <button type="button" role="menuitem" data-act="aw-wake">Wake the phone</button>
+        <button type="button" role="menuitem" data-act="aw-off">Let phone screen sleep</button>
+        <div class="mlabel">Phone power</div>
+        <button type="button" role="menuitem" data-act="lock">Lock phone</button>
+        <button type="button" role="menuitem" data-act="power">Phone power menu</button>
+        <div class="mlabel">This window</div>
+        <button type="button" role="menuitem" data-act="snd" id="sv-snd">Phone sound: on</button>
+        <button type="button" role="menuitem" data-act="clip">Send my clipboard to the phone</button>
+        <button type="button" role="menuitem" data-act="full" id="sv-full">Full screen</button>
+        <button type="button" role="menuitem" data-act="float" id="sv-float">Float on top</button>
+        <button type="button" role="menuitem" data-act="stop">Stop viewing the phone</button>
+        <button type="button" role="menuitem" data-act="close">Back to UltraCast</button>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="v-settings" hidden>
+      <h1>Settings</h1>
+      <div class="card stack">
+        <label class="field">Appearance
+          <select id="theme"><option value="dark">Dark</option><option value="light">Light</option><option value="system">Match Windows</option></select></label>
+        <label class="field">Phone taking control
+          <select id="ctlmode"><option value="ask">Ask me every time</option><option value="auto">Allow without asking</option></select></label>
+        <label class="field">When the phone sends a file
+          <select id="recv"><option value="every">Ask me every time</option><option value="session">Ask once per connection</option><option value="auto">Accept automatically</option></select></label>
+        <label class="field">Save received files to
+          <select id="save"><option value="default">UltraCast folder in Downloads</option><option value="ask">Ask me where each time</option></select></label>
+        <label class="field">When sharing this laptop's screen
+          <select id="sharewhat"><option value="main">Share the main screen</option><option value="ask">Ask me which screen or window</option></select></label>
+        <label class="field">Keep this laptop awake while a phone is connected
+          <select id="keepawake"><option value="on">On (the screen will not go dark by itself)</option><option value="off">Off</option></select></label>
+        <label class="field">Copy and paste between laptop and phone
+          <select id="clipsync"><option value="on">On</option><option value="off">Off</option></select></label>
+      </div>
+      <div class="label">Self-check</div>
+      <div class="card stack">
+        <p class="muted" style="margin:0">Checks this laptop, step by step, and says what is wrong in plain words. Nothing is changed.</p>
+        <div class="row"><button type="button" class="primary" id="diag-run">Run self-check</button><button type="button" id="diag-cover">Test the black cover</button><button type="button" id="diag-copy">Copy report</button><button type="button" id="diag-log">Show phone-screen log</button><button type="button" id="diag-save">Save both as a file</button></div>
+        <div id="diag-out" class="stack"></div>
+        <pre id="diag-logview" class="diaglog" hidden></pre>
+      </div>
+      <p class="muted">Stop phone control any time with the bar on top of your screen or <code>Ctrl+Alt+J</code>.</p>
+    </section>
+  </main>
+</div>
+
+<!-- ADD NEW DEVICE -->
+<div id="modal" class="scrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <div class="head"><h2 id="m-title">Add new device</h2><button type="button" class="icon" id="m-close" aria-label="Close">&#10005;</button></div>
+    <div class="steps">
+      <div class="step" id="st-hotspot"><span class="mk"></span><span class="grow">Phone hotspot found</span><span class="tag"></span></div>
+      <div class="step" id="st-ready"><span class="mk"></span><span class="grow">UltraCast is ready on this laptop</span><span class="tag"></span></div>
+      <div class="step" id="st-phone"><span class="mk"></span><span class="grow" id="st-phone-text">Waiting for your phone</span><span class="tag"></span></div>
+      <div class="step open" id="st-phone-help">
+        <div class="muted">On the phone, open this address (works once, expires in <b id="left">2:00</b>):</div>
+        <div id="urls" class="stack"></div>
+        <div class="row"><button type="button" id="newcode">New code</button><span class="warn" id="alert"></span></div>
+        <div class="qrbox"><img id="qr" alt="Pairing code for the UltraCast phone app" width="168" height="168" hidden><div class="muted small">Or in the UltraCast phone app: Devices, Add new device, Scan the code. It only says where this laptop is; you still confirm the number below.</div></div>
+      </div>
+      <div class="step" id="st-code"><span class="mk"></span><span class="grow">Confirm the number</span><span class="tag"></span></div>
+      <div class="step open" id="st-code-body" hidden>
+        <p class="muted" style="margin:0">Your phone should show the same four numbers. If they match, nobody else is in between.</p>
+        <div class="digits" id="sas" aria-live="polite"><span>-</span><span>-</span><span>-</span><span>-</span></div>
+        <div class="row center"><button type="button" id="sas-no">They do not match</button><button type="button" class="primary" id="sas-yes">Yes, they match</button></div>
+      </div>
+      <div class="step" id="st-secure"><span class="mk"></span><span class="grow">Securing the connection</span><span class="tag"></span></div>
+    </div>
+    <p class="muted small">This phone stays trusted until you remove it in Devices.</p>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="sas.js"></script>
+<script src="host-rtc.js"></script>
+<script src="transfer.js"></script>
+<script src="phonectl.js"></script>
+<script src="pcmplayer.js"></script>
+<script src="ring.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

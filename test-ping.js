@@ -1,0 +1,22 @@
+'use strict';
+const http = require('http');
+const { note } = require('./ping');
+const { start } = require('./server');
+let ok = 0, bad = 0; const say = (s, p) => { console.log((p ? '  ok   ' : '  FAIL ') + s); p ? ok++ : bad++; };
+const get = (port, path) => new Promise((res, rej) => http.get({ host: '127.0.0.1', port, path }, (r) => { let b = ''; r.on('data', (d) => (b += d)); r.on('end', () => res({ status: r.statusCode, headers: r.headers, body: b })); }).on('error', rej));
+(async () => {
+  const n = JSON.parse(note({ port: 8765, name: 'My <PC>\u0001', open: 1, hid: '0123456789abcdef' }));
+  say('note has the right fields and a cleaned name', n.a === 'ultracast' && n.v === 1 && n.port === 8765 && n.name === 'My PC' && n.open === true);
+  say('note carries nothing secret', Object.keys(n).sort().join() === 'a,hid,name,open,port,v');
+  say('a bad name tag is dropped', JSON.parse(note({ port: 1, name: 'x', hid: '../etc' })).hid === '');
+  const s = await start({ port: 0, info: () => ({ name: 'Test laptop', hid: 'aaaaaaaaaaaaaaaa' }) });
+  let r = await get(s.port, '/ping');
+  let j = JSON.parse(r.body);
+  say('/ping answers with the laptop name, tag and port', r.status === 200 && j.name === 'Test laptop' && j.hid === 'aaaaaaaaaaaaaaaa' && j.port === s.port && j.a === 'ultracast');
+  say('/ping says it is NOT adding phones until Add new device is open', j.open === false);
+  s.newPairing();
+  r = await get(s.port, '/ping'); j = JSON.parse(r.body);
+  say('/ping says it IS adding phones after Add new device', j.open === true);
+  say('/ping is never cached and contains no code', r.headers['cache-control'] === 'no-store' && !/token|code|secret/i.test(r.body));
+  await s.close(); console.log(ok + ' checks passed'); process.exit(bad ? 1 : 0);
+})();
