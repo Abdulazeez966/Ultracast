@@ -61,6 +61,14 @@ function privateIPv4s() {
   return out;
 }
 
+function originAllowed(origin, host) {
+  const hostOk = typeof host === 'string' && (/^(\d{1,3}\.){3}\d{1,3}(:\d{1,5})?$/.test(host) || /^localhost(:\d{1,5})?$/i.test(host));
+  if (!hostOk) return false;
+  if (!origin) return true;
+  if (origin === 'null' || origin === 'file://') return true;
+  try { return new URL(origin).host === host; } catch (e) { return false; }
+}
+
 // Compares two secrets without leaking how many characters matched.
 function safeEqual(a, b) {
   const A = Buffer.from(String(a));
@@ -116,10 +124,9 @@ function start(options = {}) {
     '/transfer.js': fs.readFileSync(path.join(__dirname, 'renderer', 'transfer.js')),
     '/sas.js': fs.readFileSync(path.join(__dirname, 'renderer', 'sas.js')),
   };
-  // The two fonts the app uses, for the phone's web page too.
+  // The font the app uses, for the phone's web page too.
   const fonts = {
     '/fonts/Jost.ttf': fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Jost.ttf')),
-    '/fonts/Barlow-Medium.ttf': fs.readFileSync(path.join(__dirname, 'renderer', 'fonts', 'Barlow-Medium.ttf')),
   };
 
   const server = http.createServer((req, res) => {
@@ -159,7 +166,10 @@ function start(options = {}) {
     res.writeHead(404); res.end('Not found');
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
+  // Guide security-and-attacks.md #19 (cross-site WebSocket hijacking): a web page opened in a browser on this laptop or the phone must not be able
+  // to talk to the front desk. Allowed: no Origin at all (the Android app), the app's own window, and the phone page served by this very server.
+  // The Host header must be a plain address or "localhost", which also stops DNS-rebinding tricks.
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MESSAGE_BYTES, verifyClient: (info) => originAllowed(info.origin, info.req.headers.host) });
 
   wss.on('connection', (ws, req) => {
     const remote = req.socket.remoteAddress;
@@ -334,7 +344,8 @@ function start(options = {}) {
   });
 }
 
-module.exports = { start, isPrivate, isLoopback, privateIPv4s, proofFor, hostProofFor, sdpMacFor };
+module.exports = {
+  originAllowed, start, isPrivate, isLoopback, privateIPv4s, proofFor, hostProofFor, sdpMacFor };
 
 // ---------- run directly: node server.js ----------
 

@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('ultracast', {
   removeDevice: (id) => ipcRenderer.invoke('ultracast:device-remove', id),
   renameDevice: (id, name) => ipcRenderer.invoke('ultracast:device-rename', id, name),
   disconnect: () => ipcRenderer.send('ultracast:disconnect'),
+  devtools: () => ipcRenderer.invoke('ultracast:devtools'),
   diagCopy: (t) => ipcRenderer.invoke('ultracast:diag-copy', t),
   diagSave: (t) => ipcRenderer.invoke('ultracast:diag-save', t),
   diag: () => ipcRenderer.invoke('ultracast:diag'),

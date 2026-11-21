@@ -55,6 +55,33 @@ function client(port) {
     assert.deepStrictEqual(createStore(file).list(), []);
   });
 
+  await check('with a codec the file holds no readable secret, and reloads', () => {
+    const codec = { encrypt: (t) => Buffer.from(t, 'utf8').reverse(), decrypt: (b) => Buffer.from(b).reverse().toString('utf8') };
+    const f = path.join(dir, 'enc.json');
+    const s = createStore(f, codec);
+    const d = s.add('Enc phone');
+    const onDisk = fs.readFileSync(f, 'utf8');
+    assert.ok(!onDisk.includes(d.secret) && !onDisk.includes('Enc phone'));
+    assert.strictEqual(createStore(f, codec).lookup(d.id), d.secret);
+  });
+  await check('an old plain file is read and rewritten protected', () => {
+    const codec = { encrypt: (t) => Buffer.from(t, 'utf8').reverse(), decrypt: (b) => Buffer.from(b).reverse().toString('utf8') };
+    const f = path.join(dir, 'old.json');
+    const sec = 'a'.repeat(64);
+    fs.writeFileSync(f, JSON.stringify([{ id: '0123456789abcdef', secret: sec, name: 'Old', addedAt: 1 }]));
+    const s = createStore(f, codec);
+    assert.strictEqual(s.lookup('0123456789abcdef'), sec);
+    assert.ok(!fs.readFileSync(f, 'utf8').includes(sec));
+  });
+  await check('a protected file that cannot be opened is set aside, not fatal', () => {
+    const good = { encrypt: (t) => Buffer.from(t, 'utf8'), decrypt: (b) => Buffer.from(b).toString('utf8') };
+    const bad = { encrypt: good.encrypt, decrypt: () => { throw new Error('other Windows user'); } };
+    const f = path.join(dir, 'other.json');
+    createStore(f, good).add('X');
+    assert.deepStrictEqual(createStore(f, bad).list(), []);
+    assert.ok(fs.existsSync(f + '.unreadable'));
+  });
+
   await check('the in-page fingerprint machine matches the real SHA-256 and HMAC', () => {
     for (const s of ['', 'abc', 'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64), 'é€'.repeat(40)])
       assert.strictEqual(Sas.hex(Sas.sha256(s)), crypto.createHash('sha256').update(s).digest('hex'));

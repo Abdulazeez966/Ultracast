@@ -10,20 +10,44 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-function createStore(file) {
+/*
+  `codec` is optional: { encrypt(text) -> Buffer, decrypt(Buffer) -> text }. The app passes Windows' own
+  protection (Electron safeStorage, which uses the current Windows user's key), so the file is unreadable to other
+  Windows users or to a copied file. Without a codec the list is plain JSON (as in 0.8.8 and earlier).
+  An old plain file is read once and rewritten protected. If a protected file cannot be opened (for example it
+  came from another Windows account), it is set aside as .unreadable and the list starts empty: phones just pair again.
+*/
+const okEntry = (d) => d && typeof d.id === 'string' && typeof d.secret === 'string' && typeof d.name === 'string';
+
+function createStore(file, codec) {
   let list = [];
+  let migrate = false;
   try {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (Array.isArray(raw)) list = raw.filter((d) => d && typeof d.id === 'string' && typeof d.secret === 'string' && typeof d.name === 'string');
+    const text = fs.readFileSync(file, 'utf8');
+    const raw = JSON.parse(text);
+    if (Array.isArray(raw)) { list = raw.filter(okEntry); migrate = !!codec && list.length > 0; }
+    else if (raw && raw.v === 2 && typeof raw.enc === 'string') {
+      try {
+        const inner = JSON.parse(codec.decrypt(Buffer.from(raw.enc, 'base64')));
+        if (Array.isArray(inner)) list = inner.filter(okEntry);
+      } catch (e) {
+        try { fs.renameSync(file, file + '.unreadable'); } catch (e2) { /* ignore */ }
+      }
+    }
   } catch (e) { /* first run: empty */ }
 
   function save() {
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file + '.tmp', JSON.stringify(list), { mode: 0o600 });
+      let out = JSON.stringify(list);
+      if (codec) {
+        try { out = JSON.stringify({ v: 2, enc: Buffer.from(codec.encrypt(JSON.stringify(list))).toString('base64') }); } catch (e) { /* keep plain rather than lose the list */ }
+      }
+      fs.writeFileSync(file + '.tmp', out, { mode: 0o600 });
       fs.renameSync(file + '.tmp', file);
     } catch (e) { /* best effort */ }
   }
+  if (migrate) save();
   const clean = (n) => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 40) || 'Phone';
 
   return {

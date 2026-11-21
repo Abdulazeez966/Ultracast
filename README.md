@@ -63,7 +63,7 @@ Needs the UltraCast Android app; tested here with a fake phone page.
 - Not verified on real hardware: that Windows really leaves the cover out of capture.
 
 ## 0.7.3: fonts
-Jost (Futura-style) for words, Barlow (DIN-style) for numbers and the matching code. The window rules had been blocking font files, so they now allow fonts from the app itself.
+Jost (Futura-style) for words and numbers (numbers use its tabular figures so digits do not jitter). Barlow was dropped in 0.8.9 because it is a grotesk and the font guide bans those.
 
 ## 0.7.4
 Fixed: the installed app crashed at start with "Cannot find module ./power". power.js and pick.js were missing from the installer file list. A new test (test-package.js) now checks that every file the app loads is in the installer.
@@ -89,3 +89,29 @@ Settings: **Show phone-screen log** shows the log on screen (so it can be screen
 
 ## 0.8.5
 Clipboard fix. In this Electron version the clipboard functions return Promises. The code did not wait for them, so (1) laptop-to-phone copy sent nothing and (2) the self-check wrote the text "[object Promise]" into the laptop clipboard. All clipboard calls now wait. Phone-to-laptop copy was not affected.
+
+## 0.8.6
+Settings > **Developer tools** opens the window's DevTools (Console, Elements, Network) in its own window, for learning and finding errors.
+
+## 0.8.7
+Colors: the dark theme's navy is now neutral gray (background #121315, surface #1C1E21, raised #26282C, border #4A4E55, text #E9EAEC, muted #A1A5AD). The cyan accent and its glow are unchanged and stay on the active element only. Buttons and drop-downs get a stronger edge (--bd2) so they are easy to find. The light theme is unchanged. The phone web page, the always-on-top banner and the phone-screen menu use the same grays.
+
+## 0.8.8 (design guides applied)
+- Security (guide security-and-attacks.md, attack #19): the front desk now refuses WebSocket connections that come from another website (wrong Origin) or from a made-up host name (DNS rebinding). The Android app, the phone page and the laptop window still work. New test-origin.js.
+- Glow only on active things (guide avoid-ai-look.md, color.md): primary buttons and the logo no longer glow. Active nav item, live card and live dot still do.
+- Reduced motion (guide motion.md): the app follows the Windows "show animations" setting; the connection ring is drawn still and all transitions stop.
+- Privacy and licenses (guide legal-and-trust.md): PRIVACY.md, a Privacy card in Settings, and the Jost OFL license text next to the font files.
+
+## 0.8.9
+- Barlow removed (it is a grotesk; the font guide bans those). Jost now does numbers too, with tabular figures.
+- Motion (guide motion.md): the left menu highlight slides to the item you pick, the menu grows from its button, toasts pop in. All under 0.25 s, all off when Windows "show animations" is off.
+- The trusted-phone list is now protected with Windows' own encryption (safeStorage). An old plain list is converted on first start. If it can't be opened (another Windows account) it is set aside and the phones simply pair again.
+
+## 0.9.0
+- New app icon (concept A, the ring): window and taskbar icon, installer and uninstaller icon (build/icon.ico), and the same ring as the logo in the side bar. Note: the app .exe itself keeps the default icon because signAndEditExecutable is off in package.json; the installer, shortcuts' window and the app window use the ring. Not built on Windows here.
+
+## 0.9.1
+- Light mode: the slight blue tint is gone; backgrounds, borders and text are now neutral gray (accent stays teal). The side-bar logo follows the accent colour in light mode.
+- Pairing "No, they don't match": the four digits shake with a red edge for about 0.4 s, then the sheet closes (motion.md: motion as meaning). Skipped when animations are off.
+- Removing a trusted phone: the row fades and the gap closes smoothly instead of the list jumping.
+- Design guides were not changed (Rheo's instruction); glow stays only on what is live.

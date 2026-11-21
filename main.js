@@ -15,7 +15,7 @@
     4. Nothing the phone sends is performed unless control is currently granted.
 */
 
-const { app, BrowserWindow, Menu, ipcMain, session, desktopCapturer, screen, dialog, globalShortcut, clipboard, powerSaveBlocker, powerMonitor } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, session, desktopCapturer, screen, dialog, globalShortcut, clipboard, powerSaveBlocker, powerMonitor, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { start, privateIPv4s, sdpMacFor } = require('./server');
@@ -135,7 +135,7 @@ function showBanner() {
     width: w, height: h, x: Math.round(d.x + (d.width - w) / 2), y: d.y + 10,
     frame: false, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
     skipTaskbar: true, alwaysOnTop: true, focusable: false, show: false, hasShadow: true,
-    backgroundColor: '#141B2D',
+    backgroundColor: '#1C1E21',
     webPreferences: { preload: path.join(__dirname, 'banner-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   banner.setAlwaysOnTop(true, 'screen-saver');
@@ -248,7 +248,12 @@ function dropIncoming() { if (incoming && incoming.abort) incoming.abort(); inco
 
 // ---------- window ----------
 async function createWindow() {
-  devices = createStore(path.join(app.getPath('userData'), 'devices.json'));
+  // The trusted-phone secrets are stored protected by Windows (safeStorage), when Windows offers it.
+  let codec = null;
+  try {
+    if (safeStorage.isEncryptionAvailable()) codec = { encrypt: (t) => safeStorage.encryptString(t), decrypt: (b) => safeStorage.decryptString(b) };
+  } catch (e) { codec = null; }
+  devices = createStore(path.join(app.getPath('userData'), 'devices.json'), codec);
   // A public name tag for this laptop (not a secret), made once and kept.
   let hid = '';
   const hidFile = path.join(app.getPath('userData'), 'laptop-id.txt');
@@ -262,7 +267,7 @@ async function createWindow() {
 
   win = new BrowserWindow({
     width: 980, height: 760, minWidth: 720, minHeight: 560,
-    backgroundColor: '#0B0F1A', title: 'UltraCast', autoHideMenuBar: true,
+    backgroundColor: '#121315', title: 'UltraCast', autoHideMenuBar: true, icon: path.join(__dirname, 'renderer', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: false,   // keep the link's timers running when the window is hidden, minimised or covered
@@ -360,6 +365,8 @@ function diagDeps() {
   };
 }
 // Copy and save for the self-check. The text goes through the main side because the window's own clipboard is not always allowed.
+// Developer tools (the "window into the engine"): opened only when the person presses the Settings button.
+ipcMain.handle('ultracast:devtools', (e) => { if (!fromMain(e) || !win || win.isDestroyed()) return false; try { win.webContents.openDevTools({ mode: 'detach' }); return true; } catch (err) { return false; } });
 ipcMain.handle('ultracast:diag-copy', async (e, text) => { if (!fromMain(e) || typeof text !== 'string' || text.length > 60000) return false; try { await clipboard.writeText(text); return (await clipboard.readText()) === text; } catch (err) { return false; } });
 ipcMain.handle('ultracast:diag-save', (e, text) => {
   if (!fromMain(e) || typeof text !== 'string' || text.length > 60000) return '';

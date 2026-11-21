@@ -1,6 +1,6 @@
 {
   "name": "ultracast-windows",
-  "version": "0.8.5",
+  "version": "0.9.1",
   "description": "UltraCast laptop app: pairing server, screen sharing and phone control",
   "main": "main.js",
   "private": true,
@@ -8,7 +8,7 @@
     "start": "electron .",
     "server": "node server.js",
     "package": "node make-exe.js",
-    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js && node test-trust.js && node test-ping.js && node test-pairopen.js && node test-phonectl.js && node test-power.js && node test-pick.js && node test-sdpmac.js && node test-pcmplayer.js && node test-package.js && node test-heartbeat.js && node test-diag.js",
+    "test": "node test.js && node test-policy.js && node test-input.js && node test-files.js && node test-trust.js && node test-ping.js && node test-pairopen.js && node test-phonectl.js && node test-power.js && node test-pick.js && node test-sdpmac.js && node test-pcmplayer.js && node test-package.js && node test-heartbeat.js && node test-diag.js && node test-origin.js",
     "installer": "electron-builder --win nsis --x64"
   },
   "dependencies": {
@@ -44,9 +44,11 @@
       "pick.js",
       "renderer/**",
       "public/**",
-      "package.json"
+      "package.json",
+      "PRIVACY.md"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -58,6 +60,8 @@
       "signAndEditExecutable": false
     },
     "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

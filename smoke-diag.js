@@ -21,12 +21,15 @@ let ok = 0; const say = (s, pass) => { console.log((pass ? '  ok   ' : '  FAIL '
   say('self-check lists results', rows.length > 6);
   say('says the server is listening', rows.some((r) => /listening on port/.test(r)));
   say('checked hotkeys', rows.filter((r) => /Hotkey/.test(r)).length === 2);
-  say('checked clipboard, fonts, video', ['Clipboard', 'Fonts', 'Video'].every((k) => rows.some((r) => r.includes(k))));
+  say('checked clipboard, fonts, video', ['Clipboard', 'Font', 'Video'].every((k) => rows.some((r) => r.includes(k))));
   say('clipboard works (it needs await in this Electron: regression)', rows.some((r) => /Clipboard read and write work/.test(r)));
   say('no row is blank', rows.every((r) => r.length > 8));
   await win.evaluate(() => document.getElementById('diag-cover').click());
   await until(() => win.evaluate(() => /black cover/i.test(document.getElementById('diag-out').innerText)), 15000, 'cover result');
   say('cover test ran and the cover is gone afterwards', await app.evaluate(() => !global.__ucCoverOn));
+  const pill = await win.evaluate(() => { const p = document.getElementById('navpill'), on = document.querySelector('.nav.on'); return { t: p.style.transform, h: parseInt(p.style.height), want: on.offsetTop, oh: on.offsetHeight, ready: p.classList.contains('ready') }; });
+  say('nav highlight sits behind the active item', pill.ready && pill.t === 'translateY(' + pill.want + 'px)' && pill.h === pill.oh);
+  await win.screenshot({ path: process.env.UC_SHOT || '/tmp/uc-nav.png' });
   await app.close();
   console.log(ok + ' checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

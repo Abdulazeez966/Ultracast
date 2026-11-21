@@ -26,10 +26,12 @@
       }
       ctx.globalAlpha = 1;
     }
+    // Guide motion.md: respect the operating system's reduced-motion setting (the ring is drawn still, not waving).
+    function still() { try { return !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; } }
     function loop() { t += 0.03; draw(); raf = requestAnimationFrame(loop); }
     return {
-      set: function (s) { state.mbps = s.mbps || 0; state.active = !!s.active; },
-      start: function () { if (!running) { running = true; loop(); } },
+      set: function (s) { state.mbps = s.mbps || 0; state.active = !!s.active; if (still()) draw(); },
+      start: function () { if (still()) { draw(); return; } if (!running) { running = true; loop(); } },
       stop: function () { running = false; cancelAnimationFrame(raf); },
       draw: draw
     };

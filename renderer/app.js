@@ -25,7 +25,19 @@
     document.querySelectorAll('.nav').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-view') === name || (name === 'screen' && b.getAttribute('data-view') === 'control')); });
     if (name === 'control') ring.start(); else ring.stop();
     if (name === 'devices') refreshDevices();
+    movePill();
   }
+  // Slides the highlight behind the active nav item.
+  function movePill() {
+    var pill = $('navpill'), on = document.querySelector('.nav.on');
+    if (!pill || !on || !on.offsetHeight) return;
+    pill.style.height = on.offsetHeight + 'px';
+    pill.style.transform = 'translateY(' + on.offsetTop + 'px)';
+    pill.classList.add('ready');
+  }
+  window.addEventListener('resize', movePill);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(movePill);
+  movePill();
   document.querySelectorAll('.nav').forEach(function (b) { b.addEventListener('click', function () { showView(b.getAttribute('data-view')); }); });
 
   // ---------- theme ----------
@@ -74,6 +86,14 @@
     renderQr();
     if (phoneAlreadyHere !== true) await newCode();   // a new code would disconnect a phone that is already here
   }
+  // Guide motion.md: a shake says "no" before you read a word. The four digits shake with a red edge, then the sheet closes.
+  function refuseSheet(msg) {
+    var box = $('sas'), still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (box && !still && !$('modal').hidden) {
+      box.classList.add('shake'); box.setAttribute('data-bad', '1');
+      setTimeout(function () { box.classList.remove('shake'); box.removeAttribute('data-bad'); closeSheet(false); toast(msg); }, 460);
+    } else { closeSheet(false); toast(msg); }
+  }
   function closeSheet(disconnectPhone) {
     sheetOpen = false; $('modal').hidden = true;
     if (disconnectPhone && peer.present && !authorized) window.ultracast.disconnect();
@@ -91,7 +111,7 @@
     if (confirming) return;
     try { host.sendPair({ t: 'rejected' }); } catch (e) {}
     setTimeout(function () { window.ultracast.disconnect(); }, 150);
-    closeSheet(false); toast('Not added. If the numbers did not match, someone may be in between. Try again.');
+    refuseSheet('Not added. If the numbers did not match, someone may be in between. Try again.');
   });
   $('sas-yes').addEventListener('click', async function () {
     if (confirming) return;
@@ -456,7 +476,13 @@
         if (rm.getAttribute('data-sure') !== '1') { rm.setAttribute('data-sure', '1'); rm.textContent = 'Click again to remove'; setTimeout(function () { rm.removeAttribute('data-sure'); rm.textContent = 'Remove'; }, 3000); return; }
         await window.ultracast.removeDevice(d.id);
         if (here) window.ultracast.disconnect();
-        toast(d.name + ' removed'); refreshDevices();
+        toast(d.name + ' removed');
+        // The row leaves and the gap closes smoothly, so nothing jumps (guide motion.md). Skipped when animations are off.
+        var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (still) { refreshDevices(); return; }
+        row.style.height = row.offsetHeight + 'px'; row.style.overflow = 'hidden';
+        void row.offsetHeight; row.classList.add('leaving');
+        setTimeout(refreshDevices, 240);
       });
       row.appendChild(rm); box.appendChild(row);
     });
@@ -560,8 +586,8 @@
   $('diag-run').addEventListener('click', async function () {
     $('diag-run').disabled = true; diagLines = [{ kind: 'NOTE', text: 'Checking...' }]; diagShow();
     var res = []; try { res = await window.ultracast.diag(); } catch (e) { res = [{ kind: 'FAILED', text: 'The check could not run: ' + e }]; }
-    var fonts = await Promise.all([document.fonts.load('16px Jost'), document.fonts.load('500 40px Barlow')]).then(function (a) { return a[0].length && a[1].length; }).catch(function () { return false; });
-    res.push({ kind: fonts ? 'OK' : 'FAILED', text: 'Fonts (Jost, Barlow) ' + (fonts ? 'loaded' : 'did not load') });
+    var fonts = await document.fonts.load('16px Jost').then(function (a) { return a.length > 0; }).catch(function () { return false; });
+    res.push({ kind: fonts ? 'OK' : 'FAILED', text: 'Font (Jost) ' + (fonts ? 'loaded' : 'did not load') });
     res.push(await webrtcLoopback());
     diagLines = res; diagShow(); $('diag-run').disabled = false;
   });
@@ -580,6 +606,7 @@
   $('diag-log').addEventListener('click', function () {
     var v = $('diag-logview'); v.hidden = false; v.textContent = logText();
   });
+  $('diag-dev').addEventListener('click', function () { window.ultracast.devtools().then(function (ok) { if (!ok) toast('Could not open the developer tools.'); }); });
   $('diag-save').addEventListener('click', async function () {
     var f = ''; try { f = await window.ultracast.diagSave(reportText() + '\n\n' + logText()); } catch (e) {}
     toast(f ? 'Saved to ' + f : 'Could not save the file.');
